@@ -8,7 +8,7 @@ export const supabase =
 
 export const installBucket = "install-files";
 
-export type CoachRole = "Head Coach/Admin" | "Coordinator" | "Position Coach";
+export type CoachRole = "Admin" | "Head Coach" | "Varsity Coach" | "JV Coach" | "Volunteer Coach";
 
 export type RSVPStatus = "Yes" | "No" | "Late" | "Pending";
 
@@ -47,7 +47,7 @@ export type StaffEventRecord = {
   created_at: string;
 };
 
-export type EventRsvpRecord = {
+export type AttendanceRecord = {
   event_id: string;
   coach_id: string;
   status: RSVPStatus;
@@ -55,7 +55,7 @@ export type EventRsvpRecord = {
   updated_at: string;
 };
 
-export type InstallFileRecord = {
+export type InstallLibraryFileRecord = {
   id: string;
   title: string;
   folder: string;

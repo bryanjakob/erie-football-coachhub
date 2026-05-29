@@ -11,9 +11,9 @@ import {
   type ChatMessageRecord,
   type CoachAccount,
   type CoachRole,
-  type EventRsvpRecord,
+  type AttendanceRecord,
   type EventType,
-  type InstallFileRecord,
+  type InstallLibraryFileRecord,
   type RSVPStatus,
   type StaffChannel,
   type StaffEventRecord
@@ -36,6 +36,7 @@ const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
 const folders = ["All", "Fronts", "Coverages", "Blitzes", "Run Fits", "Practice Plans", "Drill Cards", "Opponent Scouts"];
 const defaultChannels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
+const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
 
 const initialEventForm: EventForm = {
   title: "",
@@ -193,8 +194,8 @@ export default function Page() {
   const [currentCoach, setCurrentCoach] = useState<CoachAccount | null>(null);
   const [coaches, setCoaches] = useState<CoachAccount[]>([]);
   const [events, setEvents] = useState<StaffEventRecord[]>([]);
-  const [rsvps, setRsvps] = useState<EventRsvpRecord[]>([]);
-  const [installFiles, setInstallFiles] = useState<InstallFileRecord[]>([]);
+  const [rsvps, setRsvps] = useState<AttendanceRecord[]>([]);
+  const [installFiles, setInstallFiles] = useState<InstallLibraryFileRecord[]>([]);
   const [channels, setChannels] = useState<ChatChannelRecord[]>([]);
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
@@ -202,7 +203,7 @@ export default function Page() {
   const [status, setStatus] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
-  const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Position Coach" as CoachRole, group: "" });
+  const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
   const [folder, setFolder] = useState("All");
   const [installTitle, setInstallTitle] = useState("");
   const [installFolder, setInstallFolder] = useState("Fronts");
@@ -213,7 +214,7 @@ export default function Page() {
   const [messageUpload, setMessageUpload] = useState<File | null>(null);
 
   const isConfigured = Boolean(supabase);
-  const isAdmin = currentCoach?.role === "Head Coach/Admin";
+  const isAdmin = currentCoach?.role === "Admin";
 
   const selectedChannel = useMemo(
     () => channels.find((channel) => channel.name === channelName) ?? channels[0],
@@ -230,11 +231,7 @@ export default function Page() {
     const userEmail = activeSession.user.email;
 
     if (userEmail) {
-      await supabase
-        .from("coaches")
-        .update({ auth_user_id: activeSession.user.id })
-        .is("auth_user_id", null)
-        .ilike("email", userEmail);
+      await supabase.rpc("claim_my_coach_profile");
     }
 
     const [
@@ -247,9 +244,9 @@ export default function Page() {
       announcementsResult
     ] = await Promise.all([
       supabase.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
-      supabase.from("staff_events").select("*").order("starts_at", { ascending: true }),
-      supabase.from("event_rsvps").select("*"),
-      supabase.from("install_files").select("*").order("created_at", { ascending: false }),
+      supabase.from("events").select("*").order("starts_at", { ascending: true }),
+      supabase.from("attendance").select("*"),
+      supabase.from("install_library_files").select("*").order("created_at", { ascending: false }),
       supabase.from("chat_channels").select("*").order("name", { ascending: true }),
       supabase.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
       supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(8)
@@ -265,8 +262,8 @@ export default function Page() {
 
     setCoaches((coachesResult.data ?? []) as CoachAccount[]);
     setEvents((eventsResult.data ?? []) as StaffEventRecord[]);
-    setRsvps((rsvpsResult.data ?? []) as EventRsvpRecord[]);
-    setInstallFiles((filesResult.data ?? []) as InstallFileRecord[]);
+    setRsvps((rsvpsResult.data ?? []) as AttendanceRecord[]);
+    setInstallFiles((filesResult.data ?? []) as InstallLibraryFileRecord[]);
     setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
     setAnnouncements((announcementsResult.data ?? []) as AnnouncementRecord[]);
 
@@ -277,7 +274,7 @@ export default function Page() {
     if (firstError) {
       setStatus(firstError.message);
     } else if (!profile) {
-      setStatus("Signed in, but no active coach profile matches this email. Add the coach in Admin or bootstrap the first Head Coach/Admin row in Supabase.");
+      setStatus("Signed in, but no active coach profile matches this email. Add the coach in Admin or bootstrap the first Admin row in Supabase.");
     } else {
       setStatus("");
     }
@@ -311,9 +308,9 @@ export default function Page() {
 
     const channel = supabase
       .channel("coachhub-persistent-data")
-      .on("postgres_changes", { event: "*", schema: "public", table: "staff_events" }, () => void loadData(session))
-      .on("postgres_changes", { event: "*", schema: "public", table: "event_rsvps" }, () => void loadData(session))
-      .on("postgres_changes", { event: "*", schema: "public", table: "install_files" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "install_library_files" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "coaches" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, () => void loadData(session))
@@ -379,7 +376,7 @@ export default function Page() {
     event.preventDefault();
     if (!supabase || !currentCoach || !isAdmin) return;
     const startsAt = new Date(`${eventForm.date}T${eventForm.time}`).toISOString();
-    const { error } = await supabase.from("staff_events").insert({
+    const { error } = await supabase.from("events").insert({
       title: eventForm.title,
       event_type: eventForm.eventType,
       starts_at: startsAt,
@@ -395,7 +392,7 @@ export default function Page() {
 
   async function respondToEvent(eventId: string, response: RSVPStatus) {
     if (!supabase || !currentCoach) return;
-    const { error } = await supabase.from("event_rsvps").upsert({
+    const { error } = await supabase.from("attendance").upsert({
       event_id: eventId,
       coach_id: currentCoach.id,
       status: response,
@@ -417,15 +414,25 @@ export default function Page() {
   async function inviteCoach(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !currentCoach || !isAdmin) return;
-    const { error } = await supabase.from("coaches").insert({
-      full_name: coachForm.fullName,
-      email: coachForm.email,
-      role: coachForm.role,
-      position_group: coachForm.group,
-      invited_by: currentCoach.id
+    const token = session?.access_token;
+    if (!token) return;
+    const response = await fetch("/api/invite-coach", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        fullName: coachForm.fullName,
+        email: coachForm.email,
+        role: coachForm.role,
+        positionGroup: coachForm.group
+      })
     });
-    setStatus(error ? error.message : "Coach account saved. Send their Supabase Auth invite from the dashboard or an Edge Function.");
-    if (!error) setCoachForm({ fullName: "", email: "", role: "Position Coach", group: "" });
+    const result = (await response.json()) as { error?: string };
+    const error = result.error;
+    setStatus(error ? error : "Coach account created and Supabase Auth invite sent.");
+    if (!error) setCoachForm({ fullName: "", email: "", role: "Varsity Coach", group: "" });
     await loadData(session);
   }
 
@@ -439,7 +446,7 @@ export default function Page() {
       setStatus(upload.error.message);
       return;
     }
-    const { error } = await supabase.from("install_files").insert({
+    const { error } = await supabase.from("install_library_files").insert({
       title: installTitle || installUpload.name,
       folder: installFolder,
       file_type: fileTypeFromMime(installUpload.type),
@@ -787,7 +794,7 @@ export default function Page() {
                   <input value={coachForm.email} onChange={(event) => setCoachForm({ ...coachForm, email: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Email" type="email" required />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <select value={coachForm.role} onChange={(event) => setCoachForm({ ...coachForm, role: event.target.value as CoachRole })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none">
-                      {(["Head Coach/Admin", "Coordinator", "Position Coach"] as CoachRole[]).map((role) => <option key={role}>{role}</option>)}
+                      {coachRoles.map((role) => <option key={role}>{role}</option>)}
                     </select>
                     <input value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Position group" />
                   </div>

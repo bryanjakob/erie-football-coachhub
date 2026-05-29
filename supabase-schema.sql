@@ -1,29 +1,42 @@
+-- CoachHub Staff Supabase setup
+-- Run this entire file in Supabase SQL Editor after creating your project.
+
 create extension if not exists pgcrypto;
 
-create type coach_role as enum ('Head Coach/Admin', 'Coordinator', 'Position Coach');
-create type rsvp_status as enum ('Yes', 'No', 'Late', 'Pending');
-create type event_type as enum ('Workout', 'Practice', 'Staff Meeting', 'Camp', 'Game', 'Clinic');
+do $$
+begin
+  create type coach_role as enum ('Admin', 'Head Coach', 'Varsity Coach', 'JV Coach', 'Volunteer Coach');
+exception
+  when duplicate_object then null;
+end $$;
 
-create table coaches (
+do $$
+begin
+  create type attendance_status as enum ('Yes', 'No', 'Late', 'Pending');
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type event_type as enum ('Workout', 'Practice', 'Staff Meeting', 'Camp', 'Game', 'Clinic');
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists coaches (
   id uuid primary key default gen_random_uuid(),
   auth_user_id uuid unique references auth.users(id) on delete set null,
   email text unique not null,
   full_name text not null,
-  role coach_role not null default 'Position Coach',
+  role coach_role not null default 'Volunteer Coach',
   position_group text,
   active boolean not null default true,
   invited_by uuid references coaches(id),
-  created_at timestamptz default now()
+  created_at timestamptz not null default now()
 );
 
-create table announcements (
-  id uuid primary key default gen_random_uuid(),
-  body text not null,
-  created_by uuid references coaches(id),
-  created_at timestamptz default now()
-);
-
-create table staff_events (
+create table if not exists events (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   event_type event_type not null,
@@ -31,22 +44,22 @@ create table staff_events (
   ends_at timestamptz,
   location text,
   notes text,
-  rsvp_required boolean default false,
+  rsvp_required boolean not null default true,
   google_calendar_uid text,
   created_by uuid references coaches(id),
-  created_at timestamptz default now()
+  created_at timestamptz not null default now()
 );
 
-create table event_rsvps (
-  event_id uuid references staff_events(id) on delete cascade,
+create table if not exists attendance (
+  event_id uuid references events(id) on delete cascade,
   coach_id uuid references coaches(id) on delete cascade,
-  status rsvp_status not null default 'Pending',
+  status attendance_status not null default 'Pending',
   response_note text,
-  updated_at timestamptz default now(),
+  updated_at timestamptz not null default now(),
   primary key (event_id, coach_id)
 );
 
-create table install_files (
+create table if not exists install_library_files (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   folder text not null,
@@ -54,29 +67,29 @@ create table install_files (
   storage_path text not null,
   file_size bigint,
   uploaded_by uuid references coaches(id),
-  created_at timestamptz default now()
+  created_at timestamptz not null default now()
 );
 
-create table chat_channels (
+create table if not exists chat_channels (
   id uuid primary key default gen_random_uuid(),
   name text unique not null
 );
 
-create table chat_messages (
+create table if not exists chat_messages (
   id uuid primary key default gen_random_uuid(),
   channel_id uuid references chat_channels(id) on delete cascade,
   coach_id uuid references coaches(id),
   body text not null,
   attachment_path text,
-  pinned boolean default false,
-  created_at timestamptz default now()
+  pinned boolean not null default false,
+  created_at timestamptz not null default now()
 );
 
-create table message_reads (
-  message_id uuid references chat_messages(id) on delete cascade,
-  coach_id uuid references coaches(id) on delete cascade,
-  read_at timestamptz default now(),
-  primary key (message_id, coach_id)
+create table if not exists announcements (
+  id uuid primary key default gen_random_uuid(),
+  body text not null,
+  created_by uuid references coaches(id),
+  created_at timestamptz not null default now()
 );
 
 insert into chat_channels (name)
@@ -91,15 +104,14 @@ values
 on conflict (name) do nothing;
 
 alter table coaches enable row level security;
-alter table announcements enable row level security;
-alter table staff_events enable row level security;
-alter table event_rsvps enable row level security;
-alter table install_files enable row level security;
+alter table events enable row level security;
+alter table attendance enable row level security;
+alter table install_library_files enable row level security;
 alter table chat_channels enable row level security;
 alter table chat_messages enable row level security;
-alter table message_reads enable row level security;
+alter table announcements enable row level security;
 
-create or replace function is_staff_member()
+create or replace function public.is_staff_member()
 returns boolean
 language sql
 stable
@@ -114,7 +126,7 @@ as $$
   );
 $$;
 
-create or replace function is_staff_admin()
+create or replace function public.is_staff_admin()
 returns boolean
 language sql
 stable
@@ -125,115 +137,204 @@ as $$
     select 1
     from coaches
     where auth_user_id = auth.uid()
-      and role = 'Head Coach/Admin'
+      and role = 'Admin'
       and active = true
   );
 $$;
 
+create or replace function public.claim_my_coach_profile()
+returns coaches
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  claimed coaches;
+begin
+  update coaches
+  set auth_user_id = auth.uid()
+  where auth_user_id is null
+    and lower(email) = lower(auth.jwt() ->> 'email')
+    and active = true
+  returning * into claimed;
+
+  if claimed.id is null then
+    select * into claimed
+    from coaches
+    where auth_user_id = auth.uid()
+      and active = true
+    limit 1;
+  end if;
+
+  return claimed;
+end;
+$$;
+
+create or replace function public.touch_attendance_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists attendance_touch_updated_at on attendance;
+create trigger attendance_touch_updated_at
+before update on attendance
+for each row
+execute function public.touch_attendance_updated_at();
+
+drop policy if exists "staff can read coaches" on coaches;
 create policy "staff can read coaches" on coaches
 for select to authenticated
-using (is_staff_member() or auth_user_id = auth.uid());
+using (public.is_staff_member());
 
-create policy "users can claim matching coach profile" on coaches
-for update to authenticated
-using (lower(email) = lower(auth.jwt() ->> 'email'))
-with check (auth_user_id = auth.uid());
-
+drop policy if exists "admins can manage coaches" on coaches;
 create policy "admins can manage coaches" on coaches
 for all to authenticated
-using (is_staff_admin())
-with check (is_staff_admin());
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
-create policy "staff can read announcements" on announcements
+drop policy if exists "staff can read events" on events;
+create policy "staff can read events" on events
 for select to authenticated
-using (is_staff_member());
+using (public.is_staff_member());
 
-create policy "admins can manage announcements" on announcements
+drop policy if exists "admins can manage events" on events;
+create policy "admins can manage events" on events
 for all to authenticated
-using (is_staff_admin())
-with check (is_staff_admin());
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
-create policy "staff can read events" on staff_events
+drop policy if exists "staff can read attendance" on attendance;
+create policy "staff can read attendance" on attendance
 for select to authenticated
-using (is_staff_member());
+using (public.is_staff_member());
 
-create policy "admins can manage events" on staff_events
-for all to authenticated
-using (is_staff_admin())
-with check (is_staff_admin());
-
-create policy "staff can read rsvps" on event_rsvps
-for select to authenticated
-using (is_staff_member());
-
-create policy "staff can upsert own rsvp" on event_rsvps
+drop policy if exists "staff can save own attendance" on attendance;
+create policy "staff can save own attendance" on attendance
 for all to authenticated
 using (
   coach_id in (select id from coaches where auth_user_id = auth.uid())
-  or is_staff_admin()
+  or public.is_staff_admin()
 )
 with check (
   coach_id in (select id from coaches where auth_user_id = auth.uid())
-  or is_staff_admin()
+  or public.is_staff_admin()
 );
 
-create policy "staff can read install files" on install_files
+drop policy if exists "staff can read install library files" on install_library_files;
+create policy "staff can read install library files" on install_library_files
 for select to authenticated
-using (is_staff_member());
+using (public.is_staff_member());
 
-create policy "staff can upload install metadata" on install_files
+drop policy if exists "staff can upload install library metadata" on install_library_files;
+create policy "staff can upload install library metadata" on install_library_files
 for insert to authenticated
-with check (is_staff_member());
+with check (public.is_staff_member());
 
-create policy "admins can manage install files" on install_files
+drop policy if exists "admins can manage install library files" on install_library_files;
+create policy "admins can manage install library files" on install_library_files
 for all to authenticated
-using (is_staff_admin())
-with check (is_staff_admin());
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
-create policy "staff can read channels" on chat_channels
+drop policy if exists "staff can read chat channels" on chat_channels;
+create policy "staff can read chat channels" on chat_channels
 for select to authenticated
-using (is_staff_member());
+using (public.is_staff_member());
 
-create policy "admins can manage channels" on chat_channels
+drop policy if exists "admins can manage chat channels" on chat_channels;
+create policy "admins can manage chat channels" on chat_channels
 for all to authenticated
-using (is_staff_admin())
-with check (is_staff_admin());
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
-create policy "staff can read messages" on chat_messages
+drop policy if exists "staff can read chat messages" on chat_messages;
+create policy "staff can read chat messages" on chat_messages
 for select to authenticated
-using (is_staff_member());
+using (public.is_staff_member());
 
-create policy "staff can send messages" on chat_messages
+drop policy if exists "staff can send chat messages" on chat_messages;
+create policy "staff can send chat messages" on chat_messages
 for insert to authenticated
 with check (coach_id in (select id from coaches where auth_user_id = auth.uid()));
 
-create policy "admins can moderate messages" on chat_messages
+drop policy if exists "admins can moderate chat messages" on chat_messages;
+create policy "admins can moderate chat messages" on chat_messages
 for update to authenticated
-using (is_staff_admin())
-with check (is_staff_admin());
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
-create policy "staff can manage own reads" on message_reads
+drop policy if exists "staff can read announcements" on announcements;
+create policy "staff can read announcements" on announcements
+for select to authenticated
+using (public.is_staff_member());
+
+drop policy if exists "admins can manage announcements" on announcements;
+create policy "admins can manage announcements" on announcements
 for all to authenticated
-using (coach_id in (select id from coaches where auth_user_id = auth.uid()))
-with check (coach_id in (select id from coaches where auth_user_id = auth.uid()));
+using (public.is_staff_admin())
+with check (public.is_staff_admin());
 
 insert into storage.buckets (id, name, public)
 values ('install-files', 'install-files', false)
 on conflict (id) do nothing;
 
+drop policy if exists "staff can read install objects" on storage.objects;
 create policy "staff can read install objects" on storage.objects
 for select to authenticated
 using (bucket_id = 'install-files' and public.is_staff_member());
 
+drop policy if exists "staff can upload install objects" on storage.objects;
 create policy "staff can upload install objects" on storage.objects
 for insert to authenticated
 with check (bucket_id = 'install-files' and public.is_staff_member());
 
+drop policy if exists "admins can update install objects" on storage.objects;
 create policy "admins can update install objects" on storage.objects
 for update to authenticated
 using (bucket_id = 'install-files' and public.is_staff_admin())
 with check (bucket_id = 'install-files' and public.is_staff_admin());
 
+drop policy if exists "admins can delete install objects" on storage.objects;
 create policy "admins can delete install objects" on storage.objects
 for delete to authenticated
 using (bucket_id = 'install-files' and public.is_staff_admin());
+
+do $$
+begin
+  alter publication supabase_realtime add table events;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table attendance;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table chat_messages;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table install_library_files;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table coaches;
+exception
+  when duplicate_object then null;
+end $$;
