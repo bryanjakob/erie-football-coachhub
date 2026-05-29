@@ -1,134 +1,51 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { CoachRole, RSVPStatus, StaffChannel } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
+import {
+  installBucket,
+  supabase,
+  type AnnouncementRecord,
+  type ChatChannelRecord,
+  type ChatMessageRecord,
+  type CoachAccount,
+  type CoachRole,
+  type EventRsvpRecord,
+  type EventType,
+  type InstallFileRecord,
+  type RSVPStatus,
+  type StaffChannel,
+  type StaffEventRecord
+} from "@/lib/supabase";
 
 type Section = "Home" | "Calendar" | "Attendance" | "Installs" | "Chats" | "Admin";
 
-type EventType = "Workout" | "Practice" | "Staff Meeting" | "Camp" | "Game" | "Clinic";
-
-type StaffEvent = {
-  id: number;
+type EventForm = {
   title: string;
-  type: EventType;
+  eventType: EventType;
   date: string;
   time: string;
   location: string;
   notes: string;
-  required: boolean;
-  yes: number;
-  no: number;
-  late: number;
-  pending: number;
-};
-
-type InstallFile = {
-  title: string;
-  folder: string;
-  type: "PDF" | "Image" | "Video" | "Screenshot";
-  updated: string;
-  size: string;
+  rsvpRequired: boolean;
 };
 
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
-
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
-
-const coach = {
-  name: "Coach Daniels",
-  role: "Head Coach/Admin" as CoachRole,
-  team: "North Valley Football",
-  initials: "CD"
-};
-
-const events: StaffEvent[] = [
-  {
-    id: 1,
-    title: "Varsity Summer Lift",
-    type: "Workout",
-    date: "Today",
-    time: "6:15 AM",
-    location: "Weight Room",
-    notes: "Bring attendance groups. OL/DL finish with sled pushes.",
-    required: true,
-    yes: 9,
-    no: 1,
-    late: 2,
-    pending: 2
-  },
-  {
-    id: 2,
-    title: "Defensive Install: Field Pressure",
-    type: "Practice",
-    date: "Fri, May 29",
-    time: "4:00 PM",
-    location: "Team Room",
-    notes: "Review blitz tape before walkthrough.",
-    required: true,
-    yes: 11,
-    no: 0,
-    late: 1,
-    pending: 2
-  },
-  {
-    id: 3,
-    title: "7v7 Camp Staff Meeting",
-    type: "Staff Meeting",
-    date: "Mon, Jun 1",
-    time: "7:30 PM",
-    location: "Fieldhouse",
-    notes: "Finalize rotations, water stations, and install limits.",
-    required: false,
-    yes: 10,
-    no: 2,
-    late: 0,
-    pending: 2
-  }
-];
-
-const announcements = [
-  "Update attendance before leaving campus today.",
-  "Opponent scout folder has new clips from East Ridge.",
-  "Special Teams will meet 20 minutes before Friday walkthrough."
-];
-
-const attendanceNames = [
-  ["Coach Price", "Yes"],
-  ["Coach Miller", "Yes"],
-  ["Coach Lopez", "Late"],
-  ["Coach Reed", "No"],
-  ["Coach Hampton", "Pending"],
-  ["Coach Avery", "Pending"]
-] as const;
-
-const installs: InstallFile[] = [
-  { title: "Mint Front Checks", folder: "Fronts", type: "PDF", updated: "Today", size: "4.8 MB" },
-  { title: "Cover 7 Match Rules", folder: "Coverages", type: "PDF", updated: "Yesterday", size: "6.1 MB" },
-  { title: "Boundary Fire Zone", folder: "Blitzes", type: "Video", updated: "May 24", size: "128 MB" },
-  { title: "Inside Zone Fits", folder: "Run Fits", type: "Image", updated: "May 22", size: "2.2 MB" },
-  { title: "Practice Plan Week 1", folder: "Practice Plans", type: "PDF", updated: "May 21", size: "1.7 MB" },
-  { title: "DB Press Drill Cards", folder: "Drill Cards", type: "Screenshot", updated: "May 19", size: "900 KB" },
-  { title: "East Ridge Scout", folder: "Opponent Scouts", type: "PDF", updated: "May 18", size: "9.4 MB" }
-];
-
+const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
 const folders = ["All", "Fronts", "Coverages", "Blitzes", "Run Fits", "Practice Plans", "Drill Cards", "Opponent Scouts"];
+const defaultChannels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
 
-const channels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
-
-const messages = [
-  { channel: "Full Staff", from: "Head Coach", body: "Pinning updated June calendar. RSVP for all required dates.", time: "9:02 AM", pinned: true, reads: 13 },
-  { channel: "Defensive Staff", from: "DC", body: "Uploaded pressure install. Check the field/boundary tags before Friday.", time: "8:41 AM", pinned: false, reads: 7 },
-  { channel: "Special Teams", from: "STC", body: "Need punt shield alignment screenshots from last clinic.", time: "Yesterday", pinned: false, reads: 5 }
-];
-
-const coaches = [
-  { name: "Marcus Daniels", role: "Head Coach/Admin", group: "Program" },
-  { name: "Ty Price", role: "Coordinator", group: "Defense" },
-  { name: "Grant Miller", role: "Coordinator", group: "Offense" },
-  { name: "Eli Lopez", role: "Position Coach", group: "DBs" },
-  { name: "Andre Reed", role: "Position Coach", group: "DL" }
-];
+const initialEventForm: EventForm = {
+  title: "",
+  eventType: "Practice",
+  date: "",
+  time: "",
+  location: "",
+  notes: "",
+  rsvpRequired: true
+};
 
 const statusStyles: Record<RSVPStatus, string> = {
   Yes: "bg-lime/15 text-lime ring-lime/30",
@@ -138,7 +55,6 @@ const statusStyles: Record<RSVPStatus, string> = {
 };
 
 function Icon({ name }: { name: Section | "Bell" | "Lock" | "Upload" | "Download" | "Search" | "Plus" }) {
-  const common = "h-5 w-5";
   const paths: Record<string, ReactNode> = {
     Home: <path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z" />,
     Calendar: <path d="M7 3v4M17 3v4M4 9h16M5 5h14v16H5z" />,
@@ -155,7 +71,7 @@ function Icon({ name }: { name: Section | "Bell" | "Lock" | "Upload" | "Download
   };
 
   return (
-    <svg className={common} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {paths[name]}
     </svg>
   );
@@ -174,291 +90,429 @@ function StatusPill({ status }: { status: RSVPStatus }) {
   return <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusStyles[status]}`}>{status}</span>;
 }
 
-function LoginPanel() {
+function formatDateTime(value: string) {
+  if (!value) return "Unscheduled";
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function fileTypeFromMime(mime: string) {
+  if (mime.includes("pdf")) return "PDF";
+  if (mime.includes("image")) return "Image";
+  if (mime.includes("video")) return "Video";
+  return "File";
+}
+
+function fileSize(size: number | null) {
+  if (!size) return "Stored";
+  if (size > 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function initials(name?: string | null, email?: string | null) {
+  const source = name || email || "Coach";
+  return source
+    .split(/[ @.]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function LoginPanel({
+  session,
+  status,
+  onLogin,
+  onReset,
+  onLogout
+}: {
+  session: Session | null;
+  status: string;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onReset: (email: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  async function handleLogin(event: FormEvent) {
+    event.preventDefault();
+    await onLogin(email, password);
+  }
+
+  if (session) {
+    return (
+      <section className="rounded-lg border border-line bg-white/[0.055] p-4 shadow-glow md:p-5">
+        <div className="flex items-center gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink">
+            <Icon name="Lock" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-black">Signed In</h2>
+            <p className="truncate text-sm text-white/60">{session.user.email}</p>
+          </div>
+          <button onClick={onLogout} className="min-h-11 rounded-lg border border-line px-4 text-sm font-bold text-white/80">Sign Out</button>
+        </div>
+        {status && <p className="mt-3 rounded-lg bg-ink/60 p-3 text-sm text-white/70">{status}</p>}
+      </section>
+    );
+  }
+
   return (
-    <section className="rounded-lg border border-line bg-white/[0.055] p-4 shadow-glow md:p-5">
+    <form onSubmit={handleLogin} className="rounded-lg border border-line bg-white/[0.055] p-4 shadow-glow md:p-5">
       <div className="flex items-center gap-3">
         <div className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink">
           <Icon name="Lock" />
         </div>
         <div>
           <h2 className="text-lg font-black">Invite-Only Login</h2>
-          <p className="text-sm text-white/60">Supabase Auth ready for magic links, passwords, reset flow, and persistent mobile sessions.</p>
+          <p className="text-sm text-white/60">Supabase Auth keeps coaches signed in on mobile after login.</p>
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <input className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" />
-        <input className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" />
+        <input value={email} onChange={(event) => setEmail(event.target.value)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
+        <input value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required />
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
         <button className="min-h-12 rounded-lg bg-lime px-5 font-black text-ink">Sign In</button>
-        <button className="min-h-12 rounded-lg border border-line px-5 font-bold text-white/80">Reset Password</button>
+        <button type="button" onClick={() => onReset(email)} className="min-h-12 rounded-lg border border-line px-5 font-bold text-white/80">Reset Password</button>
       </div>
-    </section>
+      {status && <p className="mt-3 rounded-lg bg-ink/60 p-3 text-sm text-white/70">{status}</p>}
+    </form>
   );
-}
-
-function HomeScreen({ setSection }: { setSection: (section: Section) => void }) {
-  const nextEvent = events[0];
-  return (
-    <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-      <div className="space-y-4">
-        <LoginPanel />
-        <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-lime">Next Required RSVP</p>
-              <h2 className="mt-1 text-2xl font-black">{nextEvent.title}</h2>
-              <p className="mt-1 text-sm text-white/60">{nextEvent.date} at {nextEvent.time} · {nextEvent.location}</p>
-            </div>
-            <StatusPill status="Pending" />
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {(["Yes", "Late", "No"] as RSVPStatus[]).map((status) => (
-              <button key={status} className={`min-h-14 rounded-lg text-sm font-black ring-1 ${statusStyles[status]}`}>{status}</button>
-            ))}
-          </div>
-        </section>
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {quickLinks.map((item) => (
-            <button key={item} onClick={() => setSection(item)} className="min-h-24 rounded-lg border border-line bg-white/[0.055] p-3 text-left transition hover:border-lime/60">
-              <Icon name={item} />
-              <span className="mt-3 block text-sm font-black">{item}</span>
-            </button>
-          ))}
-        </section>
-      </div>
-      <div className="space-y-4">
-        <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-          <h2 className="text-lg font-black">Attendance Summary</h2>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <Metric label="Yes" value="71%" tone="text-lime" />
-            <Metric label="Late" value="14%" tone="text-gold" />
-            <Metric label="No" value="7%" tone="text-red-200" />
-            <Metric label="Pending" value="8%" />
-          </div>
-        </section>
-        <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-          <h2 className="text-lg font-black">Announcements</h2>
-          <div className="mt-3 space-y-3">
-            {announcements.map((item) => (
-              <div key={item} className="rounded-lg bg-ink/50 p-3 text-sm text-white/75">{item}</div>
-            ))}
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function AttendanceScreen() {
-  return (
-    <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-black">Create Event</h2>
-          <button className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink" title="Create event"><Icon name="Plus" /></button>
-        </div>
-        <div className="mt-4 grid gap-3">
-          {["Title", "Date", "Time", "Location"].map((field) => (
-            <input key={field} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder={field} />
-          ))}
-          <textarea className="min-h-24 rounded-lg border border-line bg-ink/70 px-4 py-3 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Notes" />
-          <label className="flex min-h-12 items-center justify-between rounded-lg border border-line bg-ink/70 px-4 text-sm font-bold">
-            Require RSVP responses
-            <input type="checkbox" className="h-5 w-5 accent-lime" defaultChecked />
-          </label>
-        </div>
-      </section>
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <h2 className="text-xl font-black">Live RSVP Board</h2>
-        <div className="mt-4 space-y-3">
-          {attendanceNames.map(([name, status]) => (
-            <div key={name} className="flex min-h-14 items-center justify-between rounded-lg bg-ink/50 px-3">
-              <span className="font-bold">{name}</span>
-              <StatusPill status={status} />
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 grid grid-cols-4 gap-2">
-          <Metric label="Yes" value="9" tone="text-lime" />
-          <Metric label="Late" value="2" tone="text-gold" />
-          <Metric label="No" value="1" tone="text-red-200" />
-          <Metric label="Open" value="2" />
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function CalendarScreen() {
-  const days = Array.from({ length: 35 }, (_, index) => index + 1);
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-black">May 2026</h2>
-          <div className="grid grid-cols-3 rounded-lg border border-line bg-ink/70 p-1 text-sm font-bold">
-            {["Month", "Week", "Mobile"].map((view) => <button key={view} className="rounded-md px-3 py-2 first:bg-lime first:text-ink">{view}</button>)}
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs font-bold uppercase text-white/40">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <div key={day}>{day}</div>)}
-        </div>
-        <div className="mt-2 grid grid-cols-7 gap-2">
-          {days.map((day) => (
-            <button key={day} className={`min-h-20 rounded-lg border border-line p-2 text-left text-sm ${[28, 29, 31].includes(day) ? "bg-lime/10 ring-1 ring-lime/30" : "bg-ink/50"}`}>
-              <span className="font-black">{day}</span>
-              {day === 28 && <span className="mt-2 block rounded bg-lime px-1.5 py-1 text-xs font-black text-ink">Lift</span>}
-              {day === 29 && <span className="mt-2 block rounded bg-gold px-1.5 py-1 text-xs font-black text-ink">Install</span>}
-              {day === 31 && <span className="mt-2 block rounded bg-white/15 px-1.5 py-1 text-xs font-black">Clinic</span>}
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <h2 className="text-xl font-black">Event Details</h2>
-        <div className="mt-4 space-y-3">
-          {events.map((event) => (
-            <div key={event.id} className="rounded-lg bg-ink/50 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-black">{event.title}</h3>
-                <span className="rounded bg-white/10 px-2 py-1 text-xs font-bold">{event.type}</span>
-              </div>
-              <p className="mt-2 text-sm text-white/60">{event.date} · {event.time} · {event.location}</p>
-              <p className="mt-2 text-sm text-white/70">{event.notes}</p>
-            </div>
-          ))}
-        </div>
-        <button className="mt-4 min-h-12 w-full rounded-lg border border-lime/40 bg-lime/10 font-black text-lime">Export Google Calendar Feed</button>
-      </section>
-    </div>
-  );
-}
-
-function InstallScreen() {
-  const [folder, setFolder] = useState("All");
-  const [query, setQuery] = useState("");
-  const filtered = useMemo(() => installs.filter((file) => (folder === "All" || file.folder === folder) && file.title.toLowerCase().includes(query.toLowerCase())), [folder, query]);
-
-  return (
-    <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-black">Install Library</h2>
-        <button className="flex min-h-11 items-center gap-2 rounded-lg bg-lime px-4 font-black text-ink"><Icon name="Upload" /> Upload</button>
-      </div>
-      <div className="mt-4 flex min-h-12 items-center gap-3 rounded-lg border border-line bg-ink/70 px-4">
-        <Icon name="Search" />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full bg-transparent text-sm outline-none placeholder:text-white/40" placeholder="Search installs, scouts, drill cards" />
-      </div>
-      <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-        {folders.map((item) => (
-          <button key={item} onClick={() => setFolder(item)} className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold ${folder === item ? "bg-lime text-ink" : "border border-line bg-ink/60 text-white/70"}`}>{item}</button>
-        ))}
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((file) => (
-          <article key={file.title} className="rounded-lg border border-line bg-ink/50 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="font-black">{file.title}</h3>
-                <p className="mt-1 text-sm text-white/50">{file.folder} · {file.type} · {file.size}</p>
-              </div>
-              <button className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line" title={`Download ${file.title}`}><Icon name="Download" /></button>
-            </div>
-            <div className="mt-4 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/40">
-              <span>Updated {file.updated}</span>
-              <span>Mobile view</span>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ChatsScreen() {
-  const [channel, setChannel] = useState<StaffChannel>("Full Staff");
-  return (
-    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-      <section className="rounded-lg border border-line bg-white/[0.055] p-3">
-        <h2 className="px-1 pb-2 text-lg font-black">Channels</h2>
-        <div className="grid gap-2">
-          {channels.map((item) => (
-            <button key={item} onClick={() => setChannel(item)} className={`min-h-12 rounded-lg px-3 text-left text-sm font-black ${channel === item ? "bg-lime text-ink" : "bg-ink/50 text-white/75"}`}>{item}</button>
-          ))}
-        </div>
-      </section>
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-black">{channel}</h2>
-          <span className="rounded-full bg-lime/15 px-3 py-1 text-xs font-black text-lime">Realtime</span>
-        </div>
-        <div className="mt-4 space-y-3">
-          {messages.map((message) => (
-            <div key={`${message.from}-${message.time}`} className="rounded-lg bg-ink/50 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-black">{message.from}</span>
-                <span className="text-xs font-bold text-white/40">{message.time} · {message.reads} read</span>
-              </div>
-              <p className="mt-2 text-sm text-white/75">{message.body}</p>
-              {message.pinned && <span className="mt-3 inline-block rounded bg-gold/15 px-2 py-1 text-xs font-black text-gold">Pinned</span>}
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-          <input className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder={`Message ${channel}`} />
-          <button className="min-h-12 rounded-lg border border-line px-4 font-bold">Attach</button>
-          <button className="min-h-12 rounded-lg bg-lime px-5 font-black text-ink">Send</button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AdminScreen() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-black">Coach Accounts</h2>
-          <button className="min-h-11 rounded-lg bg-lime px-4 font-black text-ink">Invite Coach</button>
-        </div>
-        <div className="mt-4 space-y-3">
-          {coaches.map((item) => (
-            <div key={item.name} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-ink/50 px-3">
-              <div>
-                <div className="font-black">{item.name}</div>
-                <div className="text-sm text-white/50">{item.role} · {item.group}</div>
-              </div>
-              <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold text-white/70">Edit</button>
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4">
-        <h2 className="text-xl font-black">Admin Controls</h2>
-        <div className="mt-4 grid gap-3">
-          {["Send announcement", "Create or edit events", "Manage attendance records", "Upload install files", "Moderate pinned chats", "Review push notifications"].map((action) => (
-            <button key={action} className="min-h-14 rounded-lg border border-line bg-ink/50 px-4 text-left font-bold text-white/80">{action}</button>
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function CurrentSection({ section, setSection }: { section: Section; setSection: (section: Section) => void }) {
-  if (section === "Home") return <HomeScreen setSection={setSection} />;
-  if (section === "Calendar") return <CalendarScreen />;
-  if (section === "Attendance") return <AttendanceScreen />;
-  if (section === "Installs") return <InstallScreen />;
-  if (section === "Chats") return <ChatsScreen />;
-  return <AdminScreen />;
 }
 
 export default function Page() {
   const [section, setSection] = useState<Section>("Home");
+  const [session, setSession] = useState<Session | null>(null);
+  const [currentCoach, setCurrentCoach] = useState<CoachAccount | null>(null);
+  const [coaches, setCoaches] = useState<CoachAccount[]>([]);
+  const [events, setEvents] = useState<StaffEventRecord[]>([]);
+  const [rsvps, setRsvps] = useState<EventRsvpRecord[]>([]);
+  const [installFiles, setInstallFiles] = useState<InstallFileRecord[]>([]);
+  const [channels, setChannels] = useState<ChatChannelRecord[]>([]);
+  const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
+  const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("");
+  const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
+  const [announcementBody, setAnnouncementBody] = useState("");
+  const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Position Coach" as CoachRole, group: "" });
+  const [folder, setFolder] = useState("All");
+  const [installTitle, setInstallTitle] = useState("");
+  const [installFolder, setInstallFolder] = useState("Fronts");
+  const [installUpload, setInstallUpload] = useState<File | null>(null);
+  const [installQuery, setInstallQuery] = useState("");
+  const [channelName, setChannelName] = useState<StaffChannel>("Full Staff");
+  const [messageBody, setMessageBody] = useState("");
+  const [messageUpload, setMessageUpload] = useState<File | null>(null);
+
+  const isConfigured = Boolean(supabase);
+  const isAdmin = currentCoach?.role === "Head Coach/Admin";
+
+  const selectedChannel = useMemo(
+    () => channels.find((channel) => channel.name === channelName) ?? channels[0],
+    [channelName, channels]
+  );
+
+  const loadData = useCallback(async (activeSession: Session | null) => {
+    if (!supabase || !activeSession) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const userEmail = activeSession.user.email;
+
+    if (userEmail) {
+      await supabase
+        .from("coaches")
+        .update({ auth_user_id: activeSession.user.id })
+        .is("auth_user_id", null)
+        .ilike("email", userEmail);
+    }
+
+    const [
+      coachesResult,
+      eventsResult,
+      rsvpsResult,
+      filesResult,
+      channelsResult,
+      messagesResult,
+      announcementsResult
+    ] = await Promise.all([
+      supabase.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
+      supabase.from("staff_events").select("*").order("starts_at", { ascending: true }),
+      supabase.from("event_rsvps").select("*"),
+      supabase.from("install_files").select("*").order("created_at", { ascending: false }),
+      supabase.from("chat_channels").select("*").order("name", { ascending: true }),
+      supabase.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
+      supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(8)
+    ]);
+
+    if (channelsResult.data?.length === 0) {
+      await supabase.from("chat_channels").upsert(defaultChannels.map((name) => ({ name })), { onConflict: "name" });
+      const refreshedChannels = await supabase.from("chat_channels").select("*").order("name", { ascending: true });
+      setChannels((refreshedChannels.data ?? []) as ChatChannelRecord[]);
+    } else {
+      setChannels((channelsResult.data ?? []) as ChatChannelRecord[]);
+    }
+
+    setCoaches((coachesResult.data ?? []) as CoachAccount[]);
+    setEvents((eventsResult.data ?? []) as StaffEventRecord[]);
+    setRsvps((rsvpsResult.data ?? []) as EventRsvpRecord[]);
+    setInstallFiles((filesResult.data ?? []) as InstallFileRecord[]);
+    setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
+    setAnnouncements((announcementsResult.data ?? []) as AnnouncementRecord[]);
+
+    const profile = ((coachesResult.data ?? []) as CoachAccount[]).find((coach) => coach.auth_user_id === activeSession.user.id) ?? null;
+    setCurrentCoach(profile);
+
+    const firstError = coachesResult.error || eventsResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
+    if (firstError) {
+      setStatus(firstError.message);
+    } else if (!profile) {
+      setStatus("Signed in, but no active coach profile matches this email. Add the coach in Admin or bootstrap the first Head Coach/Admin row in Supabase.");
+    } else {
+      setStatus("");
+    }
+
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) {
+      setLoading(false);
+      setStatus("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart Next.js.");
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      void loadData(data.session);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, activeSession) => {
+      setSession(activeSession);
+      setCurrentCoach(null);
+      void loadData(activeSession);
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+
+    const channel = supabase
+      .channel("coachhub-persistent-data")
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_events" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_rsvps" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "install_files" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "coaches" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, () => void loadData(session))
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadData, session]);
+
+  const upcomingEvents = useMemo(
+    () => events.filter((event) => new Date(event.starts_at).getTime() >= Date.now() - 86400000).slice(0, 3),
+    [events]
+  );
+
+  const eventRsvpSummary = useCallback((eventId: string) => {
+    const eventRsvps = rsvps.filter((rsvp) => rsvp.event_id === eventId);
+    const summary = { Yes: 0, No: 0, Late: 0, Pending: 0 } satisfies Record<RSVPStatus, number>;
+    for (const coach of coaches) {
+      const response = eventRsvps.find((rsvp) => rsvp.coach_id === coach.id);
+      summary[response?.status ?? "Pending"] += 1;
+    }
+    return summary;
+  }, [coaches, rsvps]);
+
+  const myRsvp = useCallback((eventId: string): RSVPStatus => {
+    if (!currentCoach) return "Pending";
+    return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.coach_id === currentCoach.id)?.status ?? "Pending";
+  }, [currentCoach, rsvps]);
+
+  const attendancePercent = useMemo(() => {
+    const totalSlots = events.length * Math.max(coaches.length, 1);
+    if (!totalSlots) return 0;
+    const yesLike = rsvps.filter((rsvp) => rsvp.status === "Yes" || rsvp.status === "Late").length;
+    return Math.round((yesLike / totalSlots) * 100);
+  }, [coaches.length, events.length, rsvps]);
+
+  async function login(email: string, password: string) {
+    if (!supabase) return;
+    setStatus("Signing in...");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setStatus(error ? error.message : "Signed in.");
+  }
+
+  async function resetPassword(email: string) {
+    if (!supabase) return;
+    if (!email) {
+      setStatus("Enter your email before requesting a reset.");
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    setStatus(error ? error.message : "Password reset email sent.");
+  }
+
+  async function logout() {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setSession(null);
+    setCurrentCoach(null);
+  }
+
+  async function createEvent(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !currentCoach || !isAdmin) return;
+    const startsAt = new Date(`${eventForm.date}T${eventForm.time}`).toISOString();
+    const { error } = await supabase.from("staff_events").insert({
+      title: eventForm.title,
+      event_type: eventForm.eventType,
+      starts_at: startsAt,
+      location: eventForm.location,
+      notes: eventForm.notes,
+      rsvp_required: eventForm.rsvpRequired,
+      created_by: currentCoach.id
+    });
+    setStatus(error ? error.message : "Event saved to Supabase.");
+    if (!error) setEventForm(initialEventForm);
+    await loadData(session);
+  }
+
+  async function respondToEvent(eventId: string, response: RSVPStatus) {
+    if (!supabase || !currentCoach) return;
+    const { error } = await supabase.from("event_rsvps").upsert({
+      event_id: eventId,
+      coach_id: currentCoach.id,
+      status: response,
+      updated_at: new Date().toISOString()
+    });
+    setStatus(error ? error.message : "RSVP saved.");
+    await loadData(session);
+  }
+
+  async function postAnnouncement(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !currentCoach || !isAdmin || !announcementBody.trim()) return;
+    const { error } = await supabase.from("announcements").insert({ body: announcementBody.trim(), created_by: currentCoach.id });
+    setStatus(error ? error.message : "Announcement saved.");
+    if (!error) setAnnouncementBody("");
+    await loadData(session);
+  }
+
+  async function inviteCoach(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !currentCoach || !isAdmin) return;
+    const { error } = await supabase.from("coaches").insert({
+      full_name: coachForm.fullName,
+      email: coachForm.email,
+      role: coachForm.role,
+      position_group: coachForm.group,
+      invited_by: currentCoach.id
+    });
+    setStatus(error ? error.message : "Coach account saved. Send their Supabase Auth invite from the dashboard or an Edge Function.");
+    if (!error) setCoachForm({ fullName: "", email: "", role: "Position Coach", group: "" });
+    await loadData(session);
+  }
+
+  async function uploadInstall(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !currentCoach || !installUpload) return;
+    const cleanName = installUpload.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const path = `${installFolder}/${Date.now()}-${cleanName}`;
+    const upload = await supabase.storage.from(installBucket).upload(path, installUpload);
+    if (upload.error) {
+      setStatus(upload.error.message);
+      return;
+    }
+    const { error } = await supabase.from("install_files").insert({
+      title: installTitle || installUpload.name,
+      folder: installFolder,
+      file_type: fileTypeFromMime(installUpload.type),
+      storage_path: path,
+      file_size: installUpload.size,
+      uploaded_by: currentCoach.id
+    });
+    setStatus(error ? error.message : "Install file uploaded and saved.");
+    if (!error) {
+      setInstallTitle("");
+      setInstallUpload(null);
+    }
+    await loadData(session);
+  }
+
+  async function downloadInstall(path: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase.storage.from(installBucket).createSignedUrl(path, 60);
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  }
+
+  async function sendMessage(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !currentCoach || !selectedChannel || !messageBody.trim()) return;
+    let attachmentPath: string | null = null;
+    if (messageUpload) {
+      const cleanName = messageUpload.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      attachmentPath = `chat/${Date.now()}-${cleanName}`;
+      const upload = await supabase.storage.from(installBucket).upload(attachmentPath, messageUpload);
+      if (upload.error) {
+        setStatus(upload.error.message);
+        return;
+      }
+    }
+    const { error } = await supabase.from("chat_messages").insert({
+      channel_id: selectedChannel.id,
+      coach_id: currentCoach.id,
+      body: messageBody.trim(),
+      attachment_path: attachmentPath
+    });
+    setStatus(error ? error.message : "Message saved.");
+    if (!error) {
+      setMessageBody("");
+      setMessageUpload(null);
+    }
+    await loadData(session);
+  }
+
+  async function togglePinned(message: ChatMessageRecord) {
+    if (!supabase || !isAdmin) return;
+    const { error } = await supabase.from("chat_messages").update({ pinned: !message.pinned }).eq("id", message.id);
+    setStatus(error ? error.message : "Message moderation saved.");
+    await loadData(session);
+  }
+
+  const filteredFiles = useMemo(
+    () => installFiles.filter((file) => (folder === "All" || file.folder === folder) && file.title.toLowerCase().includes(installQuery.toLowerCase())),
+    [folder, installFiles, installQuery]
+  );
+
+  const currentMessages = useMemo(
+    () => messages.filter((message) => message.channel_id === selectedChannel?.id),
+    [messages, selectedChannel]
+  );
+
+  const coachName = currentCoach?.full_name ?? session?.user.email ?? "Coach";
+  const teamName = "Erie Football";
+  const nextEvent = upcomingEvents[0];
+  const nextSummary = nextEvent ? eventRsvpSummary(nextEvent.id) : { Yes: 0, No: 0, Late: 0, Pending: 0 };
 
   return (
     <main className="field-markings min-h-screen pb-24 lg:pb-6">
@@ -480,9 +534,9 @@ export default function Page() {
             ))}
           </nav>
           <div className="mt-auto rounded-lg border border-line bg-white/[0.045] p-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-white/40">{coach.role}</p>
-            <p className="mt-1 font-black">{coach.name}</p>
-            <p className="text-sm text-white/50">{coach.team}</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-white/40">{currentCoach?.role ?? "Coach Profile Needed"}</p>
+            <p className="mt-1 font-black">{coachName}</p>
+            <p className="text-sm text-white/50">{teamName}</p>
           </div>
         </aside>
 
@@ -490,16 +544,281 @@ export default function Page() {
           <header className="mb-4 rounded-lg border border-line bg-ink/75 p-4 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-lime">{coach.team}</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-lime">{teamName}</p>
                 <h1 className="mt-1 text-2xl font-black sm:text-3xl">{section === "Home" ? "Staff Dashboard" : section}</h1>
               </div>
               <div className="flex items-center gap-2">
                 <button className="grid h-11 w-11 place-items-center rounded-lg border border-line bg-white/[0.045]" title="Notifications"><Icon name="Bell" /></button>
-                <div className="grid h-11 w-11 place-items-center rounded-lg bg-white text-sm font-black text-ink">{coach.initials}</div>
+                <div className="grid h-11 w-11 place-items-center rounded-lg bg-white text-sm font-black text-ink">{initials(currentCoach?.full_name, session?.user.email)}</div>
               </div>
             </div>
+            {!isConfigured && <p className="mt-3 rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm font-bold text-gold">Supabase env vars are missing. Add `.env.local` values and restart the app.</p>}
+            {loading && <p className="mt-3 rounded-lg bg-white/10 p-3 text-sm text-white/70">Loading persistent staff data...</p>}
           </header>
-          <CurrentSection section={section} setSection={setSection} />
+
+          {section === "Home" && (
+            <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="space-y-4">
+                <LoginPanel session={session} status={status} onLogin={login} onReset={resetPassword} onLogout={logout} />
+                <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                  {nextEvent ? (
+                    <>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wide text-lime">Next Required RSVP</p>
+                          <h2 className="mt-1 text-2xl font-black">{nextEvent.title}</h2>
+                          <p className="mt-1 text-sm text-white/60">{formatDateTime(nextEvent.starts_at)} - {nextEvent.location}</p>
+                        </div>
+                        <StatusPill status={myRsvp(nextEvent.id)} />
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2">
+                        {(["Yes", "Late", "No"] as RSVPStatus[]).map((response) => (
+                          <button key={response} onClick={() => respondToEvent(nextEvent.id, response)} className={`min-h-14 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-white/70">No upcoming events yet. Admins can create one from Attendance.</p>
+                  )}
+                </section>
+                <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {quickLinks.map((item) => (
+                    <button key={item} onClick={() => setSection(item)} className="min-h-24 rounded-lg border border-line bg-white/[0.055] p-3 text-left transition hover:border-lime/60">
+                      <Icon name={item} />
+                      <span className="mt-3 block text-sm font-black">{item}</span>
+                    </button>
+                  ))}
+                </section>
+              </div>
+              <div className="space-y-4">
+                <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                  <h2 className="text-lg font-black">Attendance Summary</h2>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <Metric label="Trend" value={`${attendancePercent}%`} tone="text-lime" />
+                    <Metric label="Yes" value={`${nextSummary.Yes}`} tone="text-lime" />
+                    <Metric label="Late" value={`${nextSummary.Late}`} tone="text-gold" />
+                    <Metric label="Pending" value={`${nextSummary.Pending}`} />
+                  </div>
+                </section>
+                <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                  <h2 className="text-lg font-black">Announcements</h2>
+                  <div className="mt-3 space-y-3">
+                    {announcements.length ? announcements.map((announcement) => (
+                      <div key={announcement.id} className="rounded-lg bg-ink/50 p-3 text-sm text-white/75">{announcement.body}</div>
+                    )) : <p className="text-sm text-white/60">No announcements yet.</p>}
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
+
+          {section === "Attendance" && (
+            <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+              <form onSubmit={createEvent} className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-xl font-black">Create Event</h2>
+                  <button disabled={!isAdmin} className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink disabled:opacity-40" title="Create event"><Icon name="Plus" /></button>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <input value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Title" required />
+                  <select value={eventForm.eventType} onChange={(event) => setEventForm({ ...eventForm, eventType: event.target.value as EventType })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2">
+                    {eventTypes.map((type) => <option key={type}>{type}</option>)}
+                  </select>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <input value={eventForm.date} onChange={(event) => setEventForm({ ...eventForm, date: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2" type="date" required />
+                    <input value={eventForm.time} onChange={(event) => setEventForm({ ...eventForm, time: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2" type="time" required />
+                  </div>
+                  <input value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Location" />
+                  <textarea value={eventForm.notes} onChange={(event) => setEventForm({ ...eventForm, notes: event.target.value })} className="min-h-24 rounded-lg border border-line bg-ink/70 px-4 py-3 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Notes" />
+                  <label className="flex min-h-12 items-center justify-between rounded-lg border border-line bg-ink/70 px-4 text-sm font-bold">
+                    Require RSVP responses
+                    <input checked={eventForm.rsvpRequired} onChange={(event) => setEventForm({ ...eventForm, rsvpRequired: event.target.checked })} type="checkbox" className="h-5 w-5 accent-lime" />
+                  </label>
+                </div>
+              </form>
+              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <h2 className="text-xl font-black">Live RSVP Board</h2>
+                <div className="mt-4 space-y-3">
+                  {events.map((event) => {
+                    const summary = eventRsvpSummary(event.id);
+                    return (
+                      <div key={event.id} className="rounded-lg bg-ink/50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-black">{event.title}</h3>
+                            <p className="mt-1 text-sm text-white/60">{formatDateTime(event.starts_at)}</p>
+                          </div>
+                          <StatusPill status={myRsvp(event.id)} />
+                        </div>
+                        <div className="mt-3 grid grid-cols-4 gap-2">
+                          <Metric label="Yes" value={`${summary.Yes}`} tone="text-lime" />
+                          <Metric label="Late" value={`${summary.Late}`} tone="text-gold" />
+                          <Metric label="No" value={`${summary.No}`} tone="text-red-200" />
+                          <Metric label="Open" value={`${summary.Pending}`} />
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {(["Yes", "Late", "No"] as RSVPStatus[]).map((response) => (
+                            <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-11 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          )}
+
+          {section === "Calendar" && (
+            <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-xl font-black">Staff Calendar</h2>
+                  <div className="grid grid-cols-3 rounded-lg border border-line bg-ink/70 p-1 text-sm font-bold">
+                    {["Month", "Week", "Mobile"].map((view) => <button key={view} className="rounded-md px-3 py-2 first:bg-lime first:text-ink">{view}</button>)}
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {events.map((event) => (
+                    <article key={event.id} className="rounded-lg border border-line bg-ink/50 p-4">
+                      <span className="rounded bg-white/10 px-2 py-1 text-xs font-bold">{event.event_type}</span>
+                      <h3 className="mt-3 text-lg font-black">{event.title}</h3>
+                      <p className="mt-1 text-sm text-white/60">{formatDateTime(event.starts_at)} - {event.location}</p>
+                      <p className="mt-2 text-sm text-white/70">{event.notes}</p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <h2 className="text-xl font-black">Google Calendar</h2>
+                <p className="mt-3 text-sm text-white/60">Every event is stored with stable timestamps and optional Google Calendar UID support in Supabase. Add an API route or Edge Function to expose an authenticated ICS feed when you are ready.</p>
+              </section>
+            </div>
+          )}
+
+          {section === "Installs" && (
+            <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <form onSubmit={uploadInstall} className="flex flex-wrap items-end gap-3">
+                <div className="min-w-48 flex-1">
+                  <label className="text-xs font-bold uppercase tracking-wide text-white/40">Title</label>
+                  <input value={installTitle} onChange={(event) => setInstallTitle(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Install title" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wide text-white/40">Folder</label>
+                  <select value={installFolder} onChange={(event) => setInstallFolder(event.target.value)} className="mt-1 min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none">
+                    {folders.filter((item) => item !== "All").map((item) => <option key={item}>{item}</option>)}
+                  </select>
+                </div>
+                <input onChange={(event) => setInstallUpload(event.target.files?.[0] ?? null)} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 py-2 text-sm" type="file" />
+                <button disabled={!installUpload} className="flex min-h-11 items-center gap-2 rounded-lg bg-lime px-4 font-black text-ink disabled:opacity-40"><Icon name="Upload" /> Upload</button>
+              </form>
+              <div className="mt-4 flex min-h-12 items-center gap-3 rounded-lg border border-line bg-ink/70 px-4">
+                <Icon name="Search" />
+                <input value={installQuery} onChange={(event) => setInstallQuery(event.target.value)} className="w-full bg-transparent text-sm outline-none placeholder:text-white/40" placeholder="Search installs, scouts, drill cards" />
+              </div>
+              <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
+                {folders.map((item) => (
+                  <button key={item} onClick={() => setFolder(item)} className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold ${folder === item ? "bg-lime text-ink" : "border border-line bg-ink/60 text-white/70"}`}>{item}</button>
+                ))}
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {filteredFiles.map((file) => (
+                  <article key={file.id} className="rounded-lg border border-line bg-ink/50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-black">{file.title}</h3>
+                        <p className="mt-1 text-sm text-white/50">{file.folder} - {file.file_type} - {fileSize(file.file_size)}</p>
+                      </div>
+                      <button type="button" onClick={() => downloadInstall(file.storage_path)} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line" title={`Download ${file.title}`}><Icon name="Download" /></button>
+                    </div>
+                    <div className="mt-4 text-xs font-bold uppercase tracking-wide text-white/40">Uploaded {formatDateTime(file.created_at)}</div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {section === "Chats" && (
+            <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+              <section className="rounded-lg border border-line bg-white/[0.055] p-3">
+                <h2 className="px-1 pb-2 text-lg font-black">Channels</h2>
+                <div className="grid gap-2">
+                  {(channels.length ? channels : defaultChannels.map((name, index) => ({ id: `${index}`, name } as ChatChannelRecord))).map((channel) => (
+                    <button key={channel.id} onClick={() => setChannelName(channel.name)} className={`min-h-12 rounded-lg px-3 text-left text-sm font-black ${channel.name === channelName ? "bg-lime text-ink" : "bg-ink/50 text-white/75"}`}>{channel.name}</button>
+                  ))}
+                </div>
+              </section>
+              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-xl font-black">{channelName}</h2>
+                  <span className="rounded-full bg-lime/15 px-3 py-1 text-xs font-black text-lime">Realtime</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {currentMessages.map((message) => (
+                    <div key={message.id} className="rounded-lg bg-ink/50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-black">{message.coaches?.full_name ?? "Coach"}</span>
+                        <span className="text-xs font-bold text-white/40">{formatDateTime(message.created_at)}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-white/75">{message.body}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {message.pinned && <span className="rounded bg-gold/15 px-2 py-1 text-xs font-black text-gold">Pinned</span>}
+                        {message.attachment_path && <button onClick={() => downloadInstall(message.attachment_path ?? "")} className="rounded bg-white/10 px-2 py-1 text-xs font-black">Attachment</button>}
+                        {isAdmin && <button onClick={() => togglePinned(message)} className="rounded border border-line px-2 py-1 text-xs font-black">{message.pinned ? "Unpin" : "Pin"}</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <form onSubmit={sendMessage} className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                  <input value={messageBody} onChange={(event) => setMessageBody(event.target.value)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder={`Message ${channelName}`} />
+                  <input onChange={(event) => setMessageUpload(event.target.files?.[0] ?? null)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-3 py-2 text-sm" type="file" />
+                  <button className="min-h-12 rounded-lg bg-lime px-5 font-black text-ink">Send</button>
+                </form>
+              </section>
+            </div>
+          )}
+
+          {section === "Admin" && (
+            <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <h2 className="text-xl font-black">Coach Accounts</h2>
+                <form onSubmit={inviteCoach} className="mt-4 grid gap-3">
+                  <input value={coachForm.fullName} onChange={(event) => setCoachForm({ ...coachForm, fullName: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Full name" required />
+                  <input value={coachForm.email} onChange={(event) => setCoachForm({ ...coachForm, email: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Email" type="email" required />
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <select value={coachForm.role} onChange={(event) => setCoachForm({ ...coachForm, role: event.target.value as CoachRole })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none">
+                      {(["Head Coach/Admin", "Coordinator", "Position Coach"] as CoachRole[]).map((role) => <option key={role}>{role}</option>)}
+                    </select>
+                    <input value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Position group" />
+                  </div>
+                  <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-lime px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
+                </form>
+                <div className="mt-4 space-y-3">
+                  {coaches.map((coach) => (
+                    <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-ink/50 px-3">
+                      <div>
+                        <div className="font-black">{coach.full_name}</div>
+                        <div className="text-sm text-white/50">{coach.role} - {coach.position_group ?? "Staff"} - {coach.email}</div>
+                      </div>
+                      <StatusPill status={coach.auth_user_id ? "Yes" : "Pending"} />
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <h2 className="text-xl font-black">Announcements</h2>
+                <form onSubmit={postAnnouncement} className="mt-4 grid gap-3">
+                  <textarea value={announcementBody} onChange={(event) => setAnnouncementBody(event.target.value)} className="min-h-28 rounded-lg border border-line bg-ink/70 px-4 py-3 text-sm outline-none" placeholder="Staff announcement" />
+                  <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-lime px-4 font-black text-ink disabled:opacity-40">Send Announcement</button>
+                </form>
+                <div className="mt-4 grid gap-3">
+                  {["Create/edit events", "Manage attendance", "Upload install files", "Moderate chats", "Review push notifications"].map((action) => (
+                    <div key={action} className="min-h-14 rounded-lg border border-line bg-ink/50 px-4 py-4 text-left font-bold text-white/80">{action}</div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
         </div>
       </div>
 
