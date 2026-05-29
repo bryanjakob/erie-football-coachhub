@@ -222,7 +222,8 @@ export default function Page() {
   );
 
   const loadData = useCallback(async (activeSession: Session | null) => {
-    if (!supabase || !activeSession) {
+    const client = supabase;
+    if (!client || !activeSession) {
       setLoading(false);
       return;
     }
@@ -231,7 +232,7 @@ export default function Page() {
     const userEmail = activeSession.user.email;
 
     if (userEmail) {
-      await supabase.rpc("claim_my_coach_profile");
+      await client.rpc("claim_my_coach_profile");
     }
 
     const [
@@ -243,18 +244,18 @@ export default function Page() {
       messagesResult,
       announcementsResult
     ] = await Promise.all([
-      supabase.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
-      supabase.from("events").select("*").order("starts_at", { ascending: true }),
-      supabase.from("attendance").select("*"),
-      supabase.from("install_library_files").select("*").order("created_at", { ascending: false }),
-      supabase.from("chat_channels").select("*").order("name", { ascending: true }),
-      supabase.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
-      supabase.from("announcements").select("*").order("created_at", { ascending: false }).limit(8)
+      client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
+      client.from("events").select("*").order("starts_at", { ascending: true }),
+      client.from("attendance").select("*"),
+      client.from("install_library_files").select("*").order("created_at", { ascending: false }),
+      client.from("chat_channels").select("*").order("name", { ascending: true }),
+      client.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
+      client.from("announcements").select("*").order("created_at", { ascending: false }).limit(8)
     ]);
 
     if (channelsResult.data?.length === 0) {
-      await supabase.from("chat_channels").upsert(defaultChannels.map((name) => ({ name })), { onConflict: "name" });
-      const refreshedChannels = await supabase.from("chat_channels").select("*").order("name", { ascending: true });
+      await client.from("chat_channels").upsert(defaultChannels.map((name) => ({ name })), { onConflict: "name" });
+      const refreshedChannels = await client.from("chat_channels").select("*").order("name", { ascending: true });
       setChannels((refreshedChannels.data ?? []) as ChatChannelRecord[]);
     } else {
       setChannels((channelsResult.data ?? []) as ChatChannelRecord[]);
@@ -283,18 +284,19 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    if (!supabase) {
+    const client = supabase;
+    if (!client) {
       setLoading(false);
       setStatus("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart Next.js.");
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    client.auth.getSession().then(({ data }) => {
       setSession(data.session);
       void loadData(data.session);
     });
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, activeSession) => {
+    const { data: authListener } = client.auth.onAuthStateChange((_event, activeSession) => {
       setSession(activeSession);
       setCurrentCoach(null);
       void loadData(activeSession);
@@ -304,9 +306,10 @@ export default function Page() {
   }, [loadData]);
 
   useEffect(() => {
-    if (!supabase || !session) return;
+    const client = supabase;
+    if (!client || !session) return;
 
-    const channel = supabase
+    const channel = client
       .channel("coachhub-persistent-data")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => void loadData(session))
@@ -317,7 +320,7 @@ export default function Page() {
       .subscribe();
 
     return () => {
-      void supabase.removeChannel(channel);
+      void client.removeChannel(channel);
     };
   }, [loadData, session]);
 
@@ -349,34 +352,38 @@ export default function Page() {
   }, [coaches.length, events.length, rsvps]);
 
   async function login(email: string, password: string) {
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
     setStatus("Signing in...");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await client.auth.signInWithPassword({ email, password });
     setStatus(error ? error.message : "Signed in.");
   }
 
   async function resetPassword(email: string) {
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
     if (!email) {
       setStatus("Enter your email before requesting a reset.");
       return;
     }
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await client.auth.resetPasswordForEmail(email);
     setStatus(error ? error.message : "Password reset email sent.");
   }
 
   async function logout() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    const client = supabase;
+    if (!client) return;
+    await client.auth.signOut();
     setSession(null);
     setCurrentCoach(null);
   }
 
   async function createEvent(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !currentCoach || !isAdmin) return;
+    const client = supabase;
+    if (!client || !currentCoach || !isAdmin) return;
     const startsAt = new Date(`${eventForm.date}T${eventForm.time}`).toISOString();
-    const { error } = await supabase.from("events").insert({
+    const { error } = await client.from("events").insert({
       title: eventForm.title,
       event_type: eventForm.eventType,
       starts_at: startsAt,
@@ -391,8 +398,9 @@ export default function Page() {
   }
 
   async function respondToEvent(eventId: string, response: RSVPStatus) {
-    if (!supabase || !currentCoach) return;
-    const { error } = await supabase.from("attendance").upsert({
+    const client = supabase;
+    if (!client || !currentCoach) return;
+    const { error } = await client.from("attendance").upsert({
       event_id: eventId,
       coach_id: currentCoach.id,
       status: response,
@@ -404,8 +412,9 @@ export default function Page() {
 
   async function postAnnouncement(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !currentCoach || !isAdmin || !announcementBody.trim()) return;
-    const { error } = await supabase.from("announcements").insert({ body: announcementBody.trim(), created_by: currentCoach.id });
+    const client = supabase;
+    if (!client || !currentCoach || !isAdmin || !announcementBody.trim()) return;
+    const { error } = await client.from("announcements").insert({ body: announcementBody.trim(), created_by: currentCoach.id });
     setStatus(error ? error.message : "Announcement saved.");
     if (!error) setAnnouncementBody("");
     await loadData(session);
@@ -413,7 +422,8 @@ export default function Page() {
 
   async function inviteCoach(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !currentCoach || !isAdmin) return;
+    const client = supabase;
+    if (!client || !currentCoach || !isAdmin) return;
     const token = session?.access_token;
     if (!token) return;
     const response = await fetch("/api/invite-coach", {
@@ -438,15 +448,16 @@ export default function Page() {
 
   async function uploadInstall(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !currentCoach || !installUpload) return;
+    const client = supabase;
+    if (!client || !currentCoach || !installUpload) return;
     const cleanName = installUpload.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const path = `${installFolder}/${Date.now()}-${cleanName}`;
-    const upload = await supabase.storage.from(installBucket).upload(path, installUpload);
+    const upload = await client.storage.from(installBucket).upload(path, installUpload);
     if (upload.error) {
       setStatus(upload.error.message);
       return;
     }
-    const { error } = await supabase.from("install_library_files").insert({
+    const { error } = await client.from("install_library_files").insert({
       title: installTitle || installUpload.name,
       folder: installFolder,
       file_type: fileTypeFromMime(installUpload.type),
@@ -463,8 +474,9 @@ export default function Page() {
   }
 
   async function downloadInstall(path: string) {
-    if (!supabase) return;
-    const { data, error } = await supabase.storage.from(installBucket).createSignedUrl(path, 60);
+    const client = supabase;
+    if (!client) return;
+    const { data, error } = await client.storage.from(installBucket).createSignedUrl(path, 60);
     if (error) {
       setStatus(error.message);
       return;
@@ -474,18 +486,19 @@ export default function Page() {
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !currentCoach || !selectedChannel || !messageBody.trim()) return;
+    const client = supabase;
+    if (!client || !currentCoach || !selectedChannel || !messageBody.trim()) return;
     let attachmentPath: string | null = null;
     if (messageUpload) {
       const cleanName = messageUpload.name.replace(/[^a-zA-Z0-9._-]/g, "-");
       attachmentPath = `chat/${Date.now()}-${cleanName}`;
-      const upload = await supabase.storage.from(installBucket).upload(attachmentPath, messageUpload);
+      const upload = await client.storage.from(installBucket).upload(attachmentPath, messageUpload);
       if (upload.error) {
         setStatus(upload.error.message);
         return;
       }
     }
-    const { error } = await supabase.from("chat_messages").insert({
+    const { error } = await client.from("chat_messages").insert({
       channel_id: selectedChannel.id,
       coach_id: currentCoach.id,
       body: messageBody.trim(),
@@ -500,8 +513,9 @@ export default function Page() {
   }
 
   async function togglePinned(message: ChatMessageRecord) {
-    if (!supabase || !isAdmin) return;
-    const { error } = await supabase.from("chat_messages").update({ pinned: !message.pinned }).eq("id", message.id);
+    const client = supabase;
+    if (!client || !isAdmin) return;
+    const { error } = await client.from("chat_messages").update({ pinned: !message.pinned }).eq("id", message.id);
     setStatus(error ? error.message : "Message moderation saved.");
     await loadData(session);
   }
