@@ -5,14 +5,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        turf: "#18593b",
-        lime: "#c7f000",
-        gold: "#f6c945",
-        ink: "#08100d",
-        line: "rgba(255,255,255,0.12)"
+        orange: "#F15A22",
+        ink: "#000000",
+        charcoal: "#1A1A1A",
+        graphite: "#2B2B2B",
+        line: "rgba(255,255,255,0.14)"
       },
       boxShadow: {
-        glow: "0 0 0 1px rgba(199,240,0,0.24), 0 20px 80px rgba(0,0,0,0.28)"
+        glow: "0 0 0 1px rgba(241,90,34,0.28), 0 18px 64px rgba(0,0,0,0.42)"
       }
     }
   },

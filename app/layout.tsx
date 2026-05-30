@@ -3,12 +3,16 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CoachHub Staff",
-  description: "Private football staff communication, attendance, install, and calendar hub."
+  title: "Erie Football CoachHub",
+  description: "Private Erie Football staff communication, attendance, install, and calendar hub.",
+  icons: {
+    icon: "/erie-football-logo.png",
+    apple: "/erie-football-logo.png"
+  }
 };
 
 export const viewport: Viewport = {
-  themeColor: "#08100d",
+  themeColor: "#000000",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1

@@ -37,6 +37,7 @@ const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp",
 const folders = ["All", "Fronts", "Coverages", "Blitzes", "Run Fits", "Practice Plans", "Drill Cards", "Opponent Scouts"];
 const defaultChannels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
+const logoSrc = "/erie-football-logo.png";
 
 const initialEventForm: EventForm = {
   title: "",
@@ -49,7 +50,7 @@ const initialEventForm: EventForm = {
 };
 
 const statusStyles: Record<RSVPStatus, string> = {
-  Yes: "bg-lime/15 text-lime ring-lime/30",
+  Yes: "bg-orange/15 text-orange ring-orange/30",
   No: "bg-red-500/15 text-red-200 ring-red-400/30"
 };
 
@@ -78,7 +79,7 @@ function Icon({ name }: { name: Section | "Bell" | "Lock" | "Upload" | "Download
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-lg border border-line bg-white/[0.045] p-3">
+    <div className="rounded-lg border border-line bg-graphite/70 p-3">
       <div className={`text-2xl font-black ${tone ?? "text-white"}`}>{value}</div>
       <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-white/50">{label}</div>
     </div>
@@ -91,6 +92,14 @@ function StatusPill({ status }: { status: RSVPStatus }) {
 
 function RsvpSelection({ response }: { response: RSVPStatus | null }) {
   return response ? <StatusPill status={response} /> : <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/15">No RSVP</span>;
+}
+
+function ErieLogo({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex items-center justify-center rounded-md border border-white/10 bg-white p-1.5 ${className}`}>
+      <img src={logoSrc} alt="Erie Football" className="max-h-full max-w-full object-contain" />
+    </div>
+  );
 }
 
 function formatDateTime(value: string) {
@@ -154,42 +163,38 @@ function LoginPanel({
 
   if (session) {
     return (
-      <section className="rounded-lg border border-line bg-white/[0.055] p-4 shadow-glow md:p-5">
+      <section className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
         <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink">
-            <Icon name="Lock" />
-          </div>
+          <ErieLogo className="h-12 w-28 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-black">Signed In</h2>
             <p className="truncate text-sm text-white/60">{session.user.email}</p>
           </div>
           <button onClick={onLogout} className="min-h-11 rounded-lg border border-line px-4 text-sm font-bold text-white/80">Sign Out</button>
         </div>
-        {status && <p className="mt-3 rounded-lg bg-ink/60 p-3 text-sm text-white/70">{status}</p>}
+        {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
       </section>
     );
   }
 
   return (
-    <form onSubmit={handleLogin} className="rounded-lg border border-line bg-white/[0.055] p-4 shadow-glow md:p-5">
+    <form onSubmit={handleLogin} className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
       <div className="flex items-center gap-3">
-        <div className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink">
-          <Icon name="Lock" />
-        </div>
+        <ErieLogo className="h-14 w-32 shrink-0" />
         <div>
           <h2 className="text-lg font-black">Invite-Only Login</h2>
           <p className="text-sm text-white/60">Supabase Auth keeps coaches signed in on mobile after login.</p>
         </div>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <input value={email} onChange={(event) => setEmail(event.target.value)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
-        <input value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required />
+        <input value={email} onChange={(event) => setEmail(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
+        <input value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required />
       </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <button className="min-h-12 rounded-lg bg-lime px-5 font-black text-ink">Sign In</button>
+        <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Sign In</button>
         <button type="button" onClick={() => onReset(email)} className="min-h-12 rounded-lg border border-line px-5 font-bold text-white/80">Reset Password</button>
       </div>
-      {status && <p className="mt-3 rounded-lg bg-ink/60 p-3 text-sm text-white/70">{status}</p>}
+      {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
     </form>
   );
 }
@@ -658,23 +663,23 @@ export default function Page() {
   return (
     <main className="field-markings min-h-screen pb-24 lg:pb-6">
       <div className="mx-auto flex w-full max-w-7xl gap-4 px-3 py-3 sm:px-4 lg:px-6">
-        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-lg border border-line bg-ink/80 p-4 backdrop-blur lg:flex">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-lg bg-lime text-lg font-black text-ink">CH</div>
-            <div>
-              <h1 className="text-lg font-black">CoachHub</h1>
-              <p className="text-xs font-bold uppercase tracking-wide text-white/40">Staff Only</p>
+        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-lg border border-line bg-black/90 p-4 backdrop-blur lg:flex">
+          <div>
+            <ErieLogo className="h-20 w-full" />
+            <div className="mt-4 border-l-4 border-orange pl-3">
+              <h1 className="text-lg font-black uppercase tracking-wide">CoachHub</h1>
+              <p className="text-xs font-bold uppercase tracking-wide text-white/45">Erie Staff Only</p>
             </div>
           </div>
           <nav className="mt-8 grid gap-2">
             {navItems.map((item) => (
-              <button key={item} onClick={() => setSection(item)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left font-bold ${section === item ? "bg-lime text-ink" : "text-white/70 hover:bg-white/10"}`}>
+              <button key={item} onClick={() => setSection(item)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left font-bold ${section === item ? "bg-orange text-ink" : "text-white/70 hover:bg-white/10"}`}>
                 <Icon name={item} />
                 {item}
               </button>
             ))}
           </nav>
-          <div className="mt-auto rounded-lg border border-line bg-white/[0.045] p-3">
+          <div className="mt-auto rounded-lg border border-line bg-graphite/70 p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-white/40">{currentCoach?.role ?? "Coach Profile Needed"}</p>
             <p className="mt-1 font-black">{coachName}</p>
             <p className="text-sm text-white/50">{teamName}</p>
@@ -682,32 +687,35 @@ export default function Page() {
         </aside>
 
         <div className="min-w-0 flex-1">
-          <header className="mb-4 rounded-lg border border-line bg-ink/75 p-4 backdrop-blur">
+          <header className="mb-4 rounded-lg border border-line bg-black/85 p-4 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-lime">{teamName}</p>
-                <h1 className="mt-1 text-2xl font-black sm:text-3xl">{section === "Home" ? "Staff Dashboard" : section}</h1>
+              <div className="flex min-w-0 items-center gap-3">
+                <ErieLogo className="h-12 w-24 shrink-0 sm:w-32" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wide text-orange">{teamName}</p>
+                  <h1 className="mt-1 truncate text-2xl font-black sm:text-3xl">{section === "Home" ? "Staff Dashboard" : section}</h1>
+                </div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="grid h-11 w-11 place-items-center rounded-lg border border-line bg-white/[0.045]" title="Notifications"><Icon name="Bell" /></button>
+                <button className="grid h-11 w-11 place-items-center rounded-lg border border-line bg-graphite/70" title="Notifications"><Icon name="Bell" /></button>
                 <div className="grid h-11 w-11 place-items-center rounded-lg bg-white text-sm font-black text-ink">{initials(currentCoach?.full_name, session?.user.email)}</div>
               </div>
             </div>
-            {!isConfigured && <p className="mt-3 rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm font-bold text-gold">Supabase env vars are missing. Add `.env.local` values and restart the app.</p>}
+            {!isConfigured && <p className="mt-3 rounded-lg border border-orange/30 bg-orange/10 p-3 text-sm font-bold text-orange">Supabase env vars are missing. Add `.env.local` values and restart the app.</p>}
             {loading && <p className="mt-3 rounded-lg bg-white/10 p-3 text-sm text-white/70">Loading persistent staff data...</p>}
-            {status && <p className="mt-3 rounded-lg bg-ink/60 p-3 text-sm text-white/70">{status}</p>}
+            {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
           </header>
 
           {section === "Home" && (
             <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
               <div className="space-y-4">
                 <LoginPanel session={session} status={status} onLogin={login} onReset={resetPassword} onLogout={logout} />
-                <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                   {nextEvent ? (
                     <>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-lime">Next Required RSVP</p>
+                          <p className="text-xs font-bold uppercase tracking-wide text-orange">Next Required RSVP</p>
                           <h2 className="mt-1 text-2xl font-black">{nextEvent.title}</h2>
                           <p className="mt-1 text-sm text-white/60">{formatDateTime(nextEvent.date)}</p>
                         </div>
@@ -725,7 +733,7 @@ export default function Page() {
                 </section>
                 <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {quickLinks.map((item) => (
-                    <button key={item} onClick={() => setSection(item)} className="min-h-24 rounded-lg border border-line bg-white/[0.055] p-3 text-left transition hover:border-lime/60">
+                    <button key={item} onClick={() => setSection(item)} className="min-h-24 rounded-lg border border-line bg-charcoal/90 p-3 text-left transition hover:border-orange/60">
                       <Icon name={item} />
                       <span className="mt-3 block text-sm font-black">{item}</span>
                     </button>
@@ -733,20 +741,20 @@ export default function Page() {
                 </section>
               </div>
               <div className="space-y-4">
-                <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                   <h2 className="text-lg font-black">Attendance Summary</h2>
                   <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Metric label="Trend" value={`${attendancePercent}%`} tone="text-lime" />
-                    <Metric label="Yes" value={`${totalYes || nextSummary.Yes}`} tone="text-lime" />
+                    <Metric label="Trend" value={`${attendancePercent}%`} tone="text-orange" />
+                    <Metric label="Yes" value={`${totalYes || nextSummary.Yes}`} tone="text-orange" />
                     <Metric label="No" value={`${totalNo || nextSummary.No}`} tone="text-red-200" />
                     <Metric label="Events" value={`${events.length}`} />
                   </div>
                 </section>
-                <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+                <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                   <h2 className="text-lg font-black">Announcements</h2>
                   <div className="mt-3 space-y-3">
                     {announcements.length ? announcements.map((announcement) => (
-                      <div key={announcement.id} className="rounded-lg bg-ink/50 p-3 text-sm text-white/75">{announcement.body}</div>
+                      <div key={announcement.id} className="rounded-lg bg-graphite/70 p-3 text-sm text-white/75">{announcement.body}</div>
                     )) : <p className="text-sm text-white/60">No announcements yet.</p>}
                   </div>
                 </section>
@@ -756,50 +764,50 @@ export default function Page() {
 
           {section === "Attendance" && (
             <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-              <form onSubmit={createEvent} className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <form onSubmit={createEvent} className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-xl font-black">Create Event</h2>
-                  <button type="submit" disabled={eventSubmitting} className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink disabled:cursor-wait disabled:opacity-60" title="Create event">
+                  <button type="submit" disabled={eventSubmitting} className="grid h-11 w-11 place-items-center rounded-lg bg-orange text-ink disabled:cursor-wait disabled:opacity-60" title="Create event">
                     {eventSubmitting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink/30 border-t-ink" /> : <Icon name="Plus" />}
                   </button>
                 </div>
-                {eventDebugMessage && <p className="mt-3 rounded-lg border border-line bg-ink/70 p-3 text-sm font-bold text-white/80">{eventDebugMessage}</p>}
+                {eventDebugMessage && <p className="mt-3 rounded-lg border border-line bg-graphite/80 p-3 text-sm font-bold text-white/80">{eventDebugMessage}</p>}
                 <div className="mt-4 grid gap-3">
-                  <input value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Title" required />
-                  <select value={eventForm.eventType} onChange={(event) => setEventForm({ ...eventForm, eventType: event.target.value as EventType })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2">
+                  <input value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Title" required />
+                  <select value={eventForm.eventType} onChange={(event) => setEventForm({ ...eventForm, eventType: event.target.value as EventType })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2">
                     {eventTypes.map((type) => <option key={type}>{type}</option>)}
                   </select>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <input value={eventForm.date} onChange={(event) => setEventForm({ ...eventForm, date: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2" type="date" required />
-                    <input value={eventForm.time} onChange={(event) => setEventForm({ ...eventForm, time: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2" type="time" required />
+                    <input value={eventForm.date} onChange={(event) => setEventForm({ ...eventForm, date: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2" type="date" required />
+                    <input value={eventForm.time} onChange={(event) => setEventForm({ ...eventForm, time: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2" type="time" required />
                   </div>
-                  <input value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Location" />
-                  <textarea value={eventForm.notes} onChange={(event) => setEventForm({ ...eventForm, notes: event.target.value })} className="min-h-24 rounded-lg border border-line bg-ink/70 px-4 py-3 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Notes" />
-                  <label className="flex min-h-12 items-center justify-between rounded-lg border border-line bg-ink/70 px-4 text-sm font-bold">
+                  <input value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Location" />
+                  <textarea value={eventForm.notes} onChange={(event) => setEventForm({ ...eventForm, notes: event.target.value })} className="min-h-24 rounded-lg border border-line bg-graphite/80 px-4 py-3 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Notes" />
+                  <label className="flex min-h-12 items-center justify-between rounded-lg border border-line bg-graphite/80 px-4 text-sm font-bold">
                     Require RSVP responses
-                    <input checked={eventForm.rsvpRequired} onChange={(event) => setEventForm({ ...eventForm, rsvpRequired: event.target.checked })} type="checkbox" className="h-5 w-5 accent-lime" />
+                    <input checked={eventForm.rsvpRequired} onChange={(event) => setEventForm({ ...eventForm, rsvpRequired: event.target.checked })} type="checkbox" className="h-5 w-5 accent-orange" />
                   </label>
                 </div>
               </form>
-              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Live RSVP Board</h2>
                 <div className="mt-4 space-y-3">
                   {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
                   {rsvpError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{rsvpError}</p>}
-                  {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-ink/50 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
+                  {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
                   {events.map((event) => (
-                    <div key={event.id} className="rounded-lg bg-ink/50 p-3">
+                    <div key={event.id} className="rounded-lg bg-graphite/70 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <h3 className="font-black">{event.title}</h3>
                           <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
                         </div>
-                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ring-1 ${eventRsvpRequired(event) ? "bg-lime/15 text-lime ring-lime/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
+                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ring-1 ${eventRsvpRequired(event) ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
                           RSVP {eventRsvpRequired(event) ? "Required" : "Optional"}
                         </span>
                       </div>
                       {event.description && <p className="mt-3 whitespace-pre-line text-sm text-white/75">{event.description}</p>}
-                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-white/[0.045] px-3 py-2 text-sm">
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3 py-2 text-sm">
                         <span className="font-bold text-white/70">Your response</span>
                         {myRsvp(event.id) ? <StatusPill status={myRsvp(event.id) as RSVPStatus} /> : <span className="font-bold text-white/45">Not selected</span>}
                       </div>
@@ -817,16 +825,16 @@ export default function Page() {
 
           {section === "Calendar" && (
             <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
-              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h2 className="text-xl font-black">Staff Calendar</h2>
-                  <div className="grid grid-cols-3 rounded-lg border border-line bg-ink/70 p-1 text-sm font-bold">
-                    {["Month", "Week", "Mobile"].map((view) => <button key={view} className="rounded-md px-3 py-2 first:bg-lime first:text-ink">{view}</button>)}
+                  <div className="grid grid-cols-3 rounded-lg border border-line bg-graphite/80 p-1 text-sm font-bold">
+                    {["Month", "Week", "Mobile"].map((view) => <button key={view} className="rounded-md px-3 py-2 first:bg-orange first:text-ink">{view}</button>)}
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   {events.map((event) => (
-                    <article key={event.id} className="rounded-lg border border-line bg-ink/50 p-4">
+                    <article key={event.id} className="rounded-lg border border-line bg-graphite/70 p-4">
                       <span className="rounded bg-white/10 px-2 py-1 text-xs font-bold">Event</span>
                       <h3 className="mt-3 text-lg font-black">{event.title}</h3>
                       <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
@@ -835,7 +843,7 @@ export default function Page() {
                   ))}
                 </div>
               </section>
-              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Google Calendar</h2>
                 <p className="mt-3 text-sm text-white/60">Every event is stored with stable timestamps and optional Google Calendar UID support in Supabase. Add an API route or Edge Function to expose an authenticated ICS feed when you are ready.</p>
               </section>
@@ -843,33 +851,33 @@ export default function Page() {
           )}
 
           {section === "Installs" && (
-            <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+            <section className="rounded-lg border border-line bg-charcoal/90 p-4">
               <form onSubmit={uploadInstall} className="flex flex-wrap items-end gap-3">
                 <div className="min-w-48 flex-1">
                   <label className="text-xs font-bold uppercase tracking-wide text-white/40">Title</label>
-                  <input value={installTitle} onChange={(event) => setInstallTitle(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Install title" />
+                  <input value={installTitle} onChange={(event) => setInstallTitle(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Install title" />
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wide text-white/40">Folder</label>
-                  <select value={installFolder} onChange={(event) => setInstallFolder(event.target.value)} className="mt-1 min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none">
+                  <select value={installFolder} onChange={(event) => setInstallFolder(event.target.value)} className="mt-1 min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none">
                     {folders.filter((item) => item !== "All").map((item) => <option key={item}>{item}</option>)}
                   </select>
                 </div>
-                <input onChange={(event) => setInstallUpload(event.target.files?.[0] ?? null)} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 py-2 text-sm" type="file" />
-                <button disabled={!installUpload} className="flex min-h-11 items-center gap-2 rounded-lg bg-lime px-4 font-black text-ink disabled:opacity-40"><Icon name="Upload" /> Upload</button>
+                <input onChange={(event) => setInstallUpload(event.target.files?.[0] ?? null)} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 py-2 text-sm" type="file" />
+                <button disabled={!installUpload} className="flex min-h-11 items-center gap-2 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40"><Icon name="Upload" /> Upload</button>
               </form>
-              <div className="mt-4 flex min-h-12 items-center gap-3 rounded-lg border border-line bg-ink/70 px-4">
+              <div className="mt-4 flex min-h-12 items-center gap-3 rounded-lg border border-line bg-graphite/80 px-4">
                 <Icon name="Search" />
                 <input value={installQuery} onChange={(event) => setInstallQuery(event.target.value)} className="w-full bg-transparent text-sm outline-none placeholder:text-white/40" placeholder="Search installs, scouts, drill cards" />
               </div>
               <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
                 {folders.map((item) => (
-                  <button key={item} onClick={() => setFolder(item)} className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold ${folder === item ? "bg-lime text-ink" : "border border-line bg-ink/60 text-white/70"}`}>{item}</button>
+                  <button key={item} onClick={() => setFolder(item)} className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold ${folder === item ? "bg-orange text-ink" : "border border-line bg-graphite/80 text-white/70"}`}>{item}</button>
                 ))}
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {filteredFiles.map((file) => (
-                  <article key={file.id} className="rounded-lg border border-line bg-ink/50 p-4">
+                  <article key={file.id} className="rounded-lg border border-line bg-graphite/70 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="font-black">{file.title}</h3>
@@ -886,29 +894,29 @@ export default function Page() {
 
           {section === "Chats" && (
             <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-              <section className="rounded-lg border border-line bg-white/[0.055] p-3">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-3">
                 <h2 className="px-1 pb-2 text-lg font-black">Channels</h2>
                 <div className="grid gap-2">
                   {(channels.length ? channels : defaultChannels.map((name, index) => ({ id: `${index}`, name } as ChatChannelRecord))).map((channel) => (
-                    <button key={channel.id} onClick={() => setChannelName(channel.name)} className={`min-h-12 rounded-lg px-3 text-left text-sm font-black ${channel.name === channelName ? "bg-lime text-ink" : "bg-ink/50 text-white/75"}`}>{channel.name}</button>
+                    <button key={channel.id} onClick={() => setChannelName(channel.name)} className={`min-h-12 rounded-lg px-3 text-left text-sm font-black ${channel.name === channelName ? "bg-orange text-ink" : "bg-graphite/70 text-white/75"}`}>{channel.name}</button>
                   ))}
                 </div>
               </section>
-              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-xl font-black">{channelName}</h2>
-                  <span className="rounded-full bg-lime/15 px-3 py-1 text-xs font-black text-lime">Realtime</span>
+                  <span className="rounded-full bg-orange/15 px-3 py-1 text-xs font-black text-orange">Realtime</span>
                 </div>
                 <div className="mt-4 space-y-3">
                   {currentMessages.map((message) => (
-                    <div key={message.id} className="rounded-lg bg-ink/50 p-3">
+                    <div key={message.id} className="rounded-lg bg-graphite/70 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-black">{message.coaches?.full_name ?? "Coach"}</span>
                         <span className="text-xs font-bold text-white/40">{formatDateTime(message.created_at)}</span>
                       </div>
                       <p className="mt-2 text-sm text-white/75">{message.body}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {message.pinned && <span className="rounded bg-gold/15 px-2 py-1 text-xs font-black text-gold">Pinned</span>}
+                        {message.pinned && <span className="rounded bg-orange/15 px-2 py-1 text-xs font-black text-orange">Pinned</span>}
                         {message.attachment_path && <button onClick={() => downloadInstall(message.attachment_path ?? "")} className="rounded bg-white/10 px-2 py-1 text-xs font-black">Attachment</button>}
                         {isAdmin && <button onClick={() => togglePinned(message)} className="rounded border border-line px-2 py-1 text-xs font-black">{message.pinned ? "Unpin" : "Pin"}</button>}
                       </div>
@@ -916,9 +924,9 @@ export default function Page() {
                   ))}
                 </div>
                 <form onSubmit={sendMessage} className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-                  <input value={messageBody} onChange={(event) => setMessageBody(event.target.value)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder={`Message ${channelName}`} />
-                  <input onChange={(event) => setMessageUpload(event.target.files?.[0] ?? null)} className="min-h-12 rounded-lg border border-line bg-ink/70 px-3 py-2 text-sm" type="file" />
-                  <button className="min-h-12 rounded-lg bg-lime px-5 font-black text-ink">Send</button>
+                  <input value={messageBody} onChange={(event) => setMessageBody(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder={`Message ${channelName}`} />
+                  <input onChange={(event) => setMessageUpload(event.target.files?.[0] ?? null)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-3 py-2 text-sm" type="file" />
+                  <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Send</button>
                 </form>
               </section>
             </div>
@@ -926,42 +934,42 @@ export default function Page() {
 
           {section === "Admin" && (
             <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
-              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Coach Accounts</h2>
                 <form onSubmit={inviteCoach} className="mt-4 grid gap-3">
-                  <input value={coachForm.fullName} onChange={(event) => setCoachForm({ ...coachForm, fullName: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Full name" required />
-                  <input value={coachForm.email} onChange={(event) => setCoachForm({ ...coachForm, email: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Email" type="email" required />
+                  <input value={coachForm.fullName} onChange={(event) => setCoachForm({ ...coachForm, fullName: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Full name" required />
+                  <input value={coachForm.email} onChange={(event) => setCoachForm({ ...coachForm, email: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Email" type="email" required />
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <select value={coachForm.role} onChange={(event) => setCoachForm({ ...coachForm, role: event.target.value as CoachRole })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none">
+                    <select value={coachForm.role} onChange={(event) => setCoachForm({ ...coachForm, role: event.target.value as CoachRole })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none">
                       {coachRoles.map((role) => <option key={role}>{role}</option>)}
                     </select>
-                    <input value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value })} className="min-h-11 rounded-lg border border-line bg-ink/70 px-3 text-sm outline-none" placeholder="Position group" />
+                    <input value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Position group" />
                   </div>
-                  <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-lime px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
+                  <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
                 </form>
                 <div className="mt-4 space-y-3">
                   {coaches.map((coach) => (
-                    <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-ink/50 px-3">
+                    <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3">
                       <div>
                         <div className="font-black">{coach.full_name}</div>
                         <div className="text-sm text-white/50">{coach.role} - {coach.position_group ?? "Staff"} - {coach.email}</div>
                       </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.auth_user_id ? "bg-lime/15 text-lime ring-lime/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.auth_user_id ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
                         {coach.auth_user_id ? "Active" : "Pending"}
                       </span>
                     </div>
                   ))}
                 </div>
               </section>
-              <section className="rounded-lg border border-line bg-white/[0.055] p-4">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Announcements</h2>
                 <form onSubmit={postAnnouncement} className="mt-4 grid gap-3">
-                  <textarea value={announcementBody} onChange={(event) => setAnnouncementBody(event.target.value)} className="min-h-28 rounded-lg border border-line bg-ink/70 px-4 py-3 text-sm outline-none" placeholder="Staff announcement" />
-                  <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-lime px-4 font-black text-ink disabled:opacity-40">Send Announcement</button>
+                  <textarea value={announcementBody} onChange={(event) => setAnnouncementBody(event.target.value)} className="min-h-28 rounded-lg border border-line bg-graphite/80 px-4 py-3 text-sm outline-none" placeholder="Staff announcement" />
+                  <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40">Send Announcement</button>
                 </form>
                 <div className="mt-4 grid gap-3">
                   {["Create/edit events", "Manage attendance", "Upload install files", "Moderate chats", "Review push notifications"].map((action) => (
-                    <div key={action} className="min-h-14 rounded-lg border border-line bg-ink/50 px-4 py-4 text-left font-bold text-white/80">{action}</div>
+                    <div key={action} className="min-h-14 rounded-lg border border-line bg-graphite/70 px-4 py-4 text-left font-bold text-white/80">{action}</div>
                   ))}
                 </div>
               </section>
@@ -970,10 +978,10 @@ export default function Page() {
         </div>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-ink/95 px-2 py-2 backdrop-blur lg:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-black/95 px-2 py-2 backdrop-blur lg:hidden">
         <div className="mx-auto grid max-w-xl grid-cols-6 gap-1">
           {navItems.map((item) => (
-            <button key={item} onClick={() => setSection(item)} className={`grid min-h-14 place-items-center rounded-lg text-[11px] font-bold ${section === item ? "bg-lime text-ink" : "text-white/60"}`}>
+            <button key={item} onClick={() => setSection(item)} className={`grid min-h-14 place-items-center rounded-lg text-[11px] font-bold ${section === item ? "bg-orange text-ink" : "text-white/60"}`}>
               <Icon name={item} />
               <span className="mt-1">{item === "Attendance" ? "RSVP" : item === "Installs" ? "Files" : item}</span>
             </button>
@@ -983,3 +991,4 @@ export default function Page() {
     </main>
   );
 }
+
