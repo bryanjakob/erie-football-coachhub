@@ -207,6 +207,7 @@ export default function Page() {
   const [status, setStatus] = useState("");
   const [eventSubmitting, setEventSubmitting] = useState(false);
   const [eventDebugMessage, setEventDebugMessage] = useState("");
+  const [eventFetchError, setEventFetchError] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
@@ -227,14 +228,49 @@ export default function Page() {
     [channelName, channels]
   );
 
+  const fetchEvents = useCallback(async (client: NonNullable<typeof supabase>) => {
+    console.log("CoachHub fetchEvents before query", {
+      schema: "public",
+      table: "events",
+      columns: "id,title,description,date,created_at",
+      order: "date.asc"
+    });
+
+    const { data, error } = await client
+      .schema("public")
+      .from("events")
+      .select("id,title,description,date,created_at")
+      .order("date", { ascending: true });
+
+    console.log("CoachHub fetchEvents after query", { data, error });
+
+    if (error) {
+      const message = `Events fetch failed: ${error.message}`;
+      setEventFetchError(message);
+      return [];
+    }
+
+    const rows = (data ?? []) as StaffEventRecord[];
+    setEvents(rows);
+    setEventFetchError("");
+    return rows;
+  }, []);
+
   const loadData = useCallback(async (activeSession: Session | null) => {
     const client = supabase;
-    if (!client || !activeSession) {
+    if (!client) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    await fetchEvents(client);
+
+    if (!activeSession) {
+      setLoading(false);
+      return;
+    }
+
     const userEmail = activeSession.user.email;
 
     if (userEmail) {
@@ -243,7 +279,6 @@ export default function Page() {
 
     const [
       coachesResult,
-      eventsResult,
       rsvpsResult,
       filesResult,
       channelsResult,
@@ -251,7 +286,6 @@ export default function Page() {
       announcementsResult
     ] = await Promise.all([
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
-      client.from("events").select("*").order("date", { ascending: true }),
       client.from("attendance").select("*"),
       client.from("install_library_files").select("*").order("created_at", { ascending: false }),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
@@ -268,7 +302,6 @@ export default function Page() {
     }
 
     setCoaches((coachesResult.data ?? []) as CoachAccount[]);
-    setEvents((eventsResult.data ?? []) as StaffEventRecord[]);
     setRsvps((rsvpsResult.data ?? []) as AttendanceRecord[]);
     setInstallFiles((filesResult.data ?? []) as InstallLibraryFileRecord[]);
     setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
@@ -277,7 +310,7 @@ export default function Page() {
     const profile = ((coachesResult.data ?? []) as CoachAccount[]).find((coach) => coach.auth_user_id === activeSession.user.id) ?? null;
     setCurrentCoach(profile);
 
-    const firstError = coachesResult.error || eventsResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
+    const firstError = coachesResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
       setStatus(firstError.message);
     } else if (!profile) {
@@ -287,7 +320,7 @@ export default function Page() {
     }
 
     setLoading(false);
-  }, []);
+  }, [fetchEvents]);
 
   useEffect(() => {
     const client = supabase;
@@ -296,6 +329,8 @@ export default function Page() {
       setStatus("Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart Next.js.");
       return;
     }
+
+    void fetchEvents(client);
 
     client.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -309,7 +344,7 @@ export default function Page() {
     });
 
     return () => authListener.subscription.unsubscribe();
-  }, [loadData]);
+  }, [fetchEvents, loadData]);
 
   useEffect(() => {
     const client = supabase;
@@ -317,7 +352,7 @@ export default function Page() {
 
     const channel = client
       .channel("coachhub-persistent-data")
-      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void fetchEvents(client))
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "install_library_files" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData(session))
@@ -328,7 +363,7 @@ export default function Page() {
     return () => {
       void client.removeChannel(channel);
     };
-  }, [loadData, session]);
+  }, [fetchEvents, loadData, session]);
 
   const upcomingEvents = useMemo(
     () => events.filter((event) => new Date(event.date).getTime() >= Date.now() - 86400000).slice(0, 3),
@@ -423,7 +458,7 @@ export default function Page() {
     console.log("CoachHub createEvent before insert", payload);
 
     try {
-      const { data, error } = await client.from("events").insert(payload).select("*").single();
+      const { data, error } = await client.schema("public").from("events").insert(payload).select("id,title,description,date,created_at").single();
       console.log("CoachHub createEvent after insert", { data, error });
 
       if (error) {
@@ -434,7 +469,15 @@ export default function Page() {
       }
 
       setEventForm(initialEventForm);
-      await loadData(session);
+      if (data) {
+        const insertedEvent = data as StaffEventRecord;
+        setEvents((existingEvents) =>
+          [...existingEvents.filter((existingEvent) => existingEvent.id !== insertedEvent.id), insertedEvent].sort(
+            (firstEvent, secondEvent) => new Date(firstEvent.date).getTime() - new Date(secondEvent.date).getTime()
+          )
+        );
+      }
+      await fetchEvents(client);
       setStatus("Event created");
       setEventDebugMessage("Event created");
     } catch (error) {
@@ -714,7 +757,8 @@ export default function Page() {
               <section className="rounded-lg border border-line bg-white/[0.055] p-4">
                 <h2 className="text-xl font-black">Live RSVP Board</h2>
                 <div className="mt-4 space-y-3">
-                  {events.length === 0 && <p className="rounded-lg bg-ink/50 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
+                  {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
+                  {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-ink/50 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
                   {events.map((event) => (
                     <div key={event.id} className="rounded-lg bg-ink/50 p-3">
                       <div className="flex items-start justify-between gap-3">
