@@ -201,6 +201,8 @@ export default function Page() {
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
+  const [eventSubmitting, setEventSubmitting] = useState(false);
+  const [eventDebugMessage, setEventDebugMessage] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
@@ -381,36 +383,64 @@ export default function Page() {
   async function createEvent(event: FormEvent) {
     event.preventDefault();
     const client = supabase;
+    setEventDebugMessage("Create event clicked.");
+
     if (!client) {
-      setStatus("Supabase is not configured.");
+      const message = "Supabase is not configured.";
+      setStatus(message);
+      setEventDebugMessage(message);
       return;
     }
     if (!eventForm.title || !eventForm.date || !eventForm.time) {
-      setStatus("Title, date, and time are required.");
+      const message = "Title, date, and time are required.";
+      setStatus(message);
+      setEventDebugMessage(message);
       return;
     }
 
     const eventDate = new Date(`${eventForm.date}T${eventForm.time}`);
     if (Number.isNaN(eventDate.getTime())) {
-      setStatus("Enter a valid event date and time.");
+      const message = "Enter a valid event date and time.";
+      setStatus(message);
+      setEventDebugMessage(message);
       return;
     }
 
     const description = [eventForm.location, eventForm.notes].filter(Boolean).join("\n\n");
-    const { error } = await client.from("events").insert({
+    const payload = {
       title: eventForm.title,
       description,
       date: eventDate.toISOString()
-    });
+    };
 
-    if (error) {
-      setStatus(`Event insert failed: ${error.message}`);
-      return;
+    setEventSubmitting(true);
+    setStatus("Creating event...");
+    setEventDebugMessage("Creating event...");
+    console.log("CoachHub createEvent before insert", payload);
+
+    try {
+      const { data, error } = await client.from("events").insert(payload).select("*").single();
+      console.log("CoachHub createEvent after insert", { data, error });
+
+      if (error) {
+        const message = `Event insert failed: ${error.message}`;
+        setStatus(message);
+        setEventDebugMessage(message);
+        return;
+      }
+
+      setEventForm(initialEventForm);
+      await loadData(session);
+      setStatus("Event created");
+      setEventDebugMessage("Event created");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown event insert error.";
+      console.log("CoachHub createEvent exception", error);
+      setStatus(message);
+      setEventDebugMessage(message);
+    } finally {
+      setEventSubmitting(false);
     }
-
-    setEventForm(initialEventForm);
-    await loadData(session);
-    setStatus("Event saved.");
   }
 
   async function respondToEvent(eventId: string, response: RSVPStatus) {
@@ -655,8 +685,11 @@ export default function Page() {
               <form onSubmit={createEvent} className="rounded-lg border border-line bg-white/[0.055] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-xl font-black">Create Event</h2>
-                  <button type="submit" className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink" title="Create event"><Icon name="Plus" /></button>
+                  <button type="submit" disabled={eventSubmitting} className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink disabled:cursor-wait disabled:opacity-60" title="Create event">
+                    {eventSubmitting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink/30 border-t-ink" /> : <Icon name="Plus" />}
+                  </button>
                 </div>
+                {eventDebugMessage && <p className="mt-3 rounded-lg border border-line bg-ink/70 p-3 text-sm font-bold text-white/80">{eventDebugMessage}</p>}
                 <div className="mt-4 grid gap-3">
                   <input value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Title" required />
                   <select value={eventForm.eventType} onChange={(event) => setEventForm({ ...eventForm, eventType: event.target.value as EventType })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 focus:ring-2">
