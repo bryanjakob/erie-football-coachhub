@@ -36,6 +36,13 @@ create table if not exists coaches (
   created_at timestamptz not null default now()
 );
 
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text not null,
+  email text,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -56,11 +63,22 @@ create table if not exists attendance (
 create table if not exists rsvps (
   id uuid primary key default gen_random_uuid(),
   event_id uuid references events(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
   coach_name text not null,
   response text not null check (response in ('Yes', 'No')),
   created_at timestamptz not null default now(),
-  unique (event_id, coach_name)
+  unique (event_id, user_id)
 );
+
+alter table rsvps add column if not exists user_id uuid references auth.users(id) on delete cascade;
+
+do $$
+begin
+  alter table rsvps drop constraint if exists rsvps_event_id_coach_name_key;
+  alter table rsvps add constraint rsvps_event_id_user_id_key unique (event_id, user_id);
+exception
+  when duplicate_object then null;
+end $$;
 
 create table if not exists install_library_files (
   id uuid primary key default gen_random_uuid(),
@@ -107,6 +125,7 @@ values
 on conflict (name) do nothing;
 
 alter table coaches enable row level security;
+alter table profiles enable row level security;
 alter table events enable row level security;
 alter table attendance enable row level security;
 alter table rsvps enable row level security;
@@ -201,6 +220,22 @@ for all to authenticated
 using (public.is_staff_admin())
 with check (public.is_staff_admin());
 
+drop policy if exists "staff can read profiles" on profiles;
+create policy "staff can read profiles" on profiles
+for select to authenticated
+using (public.is_staff_member());
+
+drop policy if exists "staff can insert own profile" on profiles;
+create policy "staff can insert own profile" on profiles
+for insert to authenticated
+with check (id = auth.uid() and public.is_staff_member());
+
+drop policy if exists "staff can update own profile" on profiles;
+create policy "staff can update own profile" on profiles
+for update to authenticated
+using (id = auth.uid() and public.is_staff_member())
+with check (id = auth.uid() and public.is_staff_member());
+
 drop policy if exists "staff can read events" on events;
 create policy "staff can read events" on events
 for select to authenticated
@@ -237,8 +272,8 @@ using (public.is_staff_member());
 drop policy if exists "staff can save rsvps" on rsvps;
 create policy "staff can save rsvps" on rsvps
 for all to authenticated
-using (public.is_staff_member())
-with check (public.is_staff_member());
+using (user_id = auth.uid() or public.is_staff_admin())
+with check (user_id = auth.uid() and public.is_staff_member());
 
 drop policy if exists "staff can read install library files" on install_library_files;
 create policy "staff can read install library files" on install_library_files
@@ -318,6 +353,13 @@ drop policy if exists "admins can delete install objects" on storage.objects;
 create policy "admins can delete install objects" on storage.objects
 for delete to authenticated
 using (bucket_id = 'install-files' and public.is_staff_admin());
+
+do $$
+begin
+  alter publication supabase_realtime add table profiles;
+exception
+  when duplicate_object then null;
+end $$;
 
 do $$
 begin

@@ -10,6 +10,7 @@ import {
   type ChatChannelRecord,
   type ChatMessageRecord,
   type CoachAccount,
+  type CoachProfile,
   type CoachRole,
   type EventType,
   type InstallLibraryFileRecord,
@@ -203,6 +204,7 @@ export default function Page() {
   const [section, setSection] = useState<Section>("Home");
   const [session, setSession] = useState<Session | null>(null);
   const [currentCoach, setCurrentCoach] = useState<CoachAccount | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<CoachProfile | null>(null);
   const [coaches, setCoaches] = useState<CoachAccount[]>([]);
   const [events, setEvents] = useState<StaffEventRecord[]>([]);
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
@@ -219,6 +221,7 @@ export default function Page() {
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
+  const [profileName, setProfileName] = useState("");
   const [folder, setFolder] = useState("All");
   const [installTitle, setInstallTitle] = useState("");
   const [installFolder, setInstallFolder] = useState("Fronts");
@@ -286,6 +289,7 @@ export default function Page() {
     }
 
     const [
+      profileResult,
       coachesResult,
       rsvpsResult,
       filesResult,
@@ -293,8 +297,9 @@ export default function Page() {
       messagesResult,
       announcementsResult
     ] = await Promise.all([
+      client.from("profiles").select("id,full_name,email,created_at").eq("id", activeSession.user.id).maybeSingle(),
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
-      client.schema("public").from("rsvps").select("id,event_id,coach_name,response,created_at"),
+      client.schema("public").from("rsvps").select("id,event_id,user_id,coach_name,response,created_at"),
       client.from("install_library_files").select("*").order("created_at", { ascending: false }),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
       client.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
@@ -315,14 +320,19 @@ export default function Page() {
     setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
     setAnnouncements((announcementsResult.data ?? []) as AnnouncementRecord[]);
 
-    const profile = ((coachesResult.data ?? []) as CoachAccount[]).find((coach) => coach.auth_user_id === activeSession.user.id) ?? null;
-    setCurrentCoach(profile);
+    const coachAccount = ((coachesResult.data ?? []) as CoachAccount[]).find((coach) => coach.auth_user_id === activeSession.user.id) ?? null;
+    const profile = (profileResult.data as CoachProfile | null) ?? null;
+    setCurrentCoach(coachAccount);
+    setCurrentProfile(profile);
+    setProfileName(profile?.full_name ?? coachAccount?.full_name ?? "");
 
-    const firstError = coachesResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
+    const firstError = profileResult.error || coachesResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
       setStatus(firstError.message);
+    } else if (!coachAccount) {
+      setStatus("Signed in, but this account is not on the active coaches invite list.");
     } else if (!profile) {
-      setStatus("Signed in, but no active coach profile matches this email. Add the coach in Admin or bootstrap the first Admin row in Supabase.");
+      setStatus("Complete your profile so RSVPs can attach to your coach name.");
     } else {
       setStatus("");
     }
@@ -348,6 +358,7 @@ export default function Page() {
     const { data: authListener } = client.auth.onAuthStateChange((_event, activeSession) => {
       setSession(activeSession);
       setCurrentCoach(null);
+      setCurrentProfile(null);
       void loadData(activeSession);
     });
 
@@ -365,6 +376,7 @@ export default function Page() {
       .on("postgres_changes", { event: "*", schema: "public", table: "install_library_files" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "coaches" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, () => void loadData(session))
       .subscribe();
 
@@ -378,7 +390,8 @@ export default function Page() {
     [events]
   );
 
-  const coachName = currentCoach?.full_name ?? session?.user.email ?? "Coach";
+  const coachName = currentProfile?.full_name ?? currentCoach?.full_name ?? session?.user.email ?? "Coach";
+  const needsProfile = Boolean(session && currentCoach && !currentProfile);
 
   const eventRsvpSummary = useCallback((eventId: string) => {
     const eventRsvps = rsvps.filter((rsvp) => rsvp.event_id === eventId);
@@ -389,8 +402,8 @@ export default function Page() {
   }, [rsvps]);
 
   const myRsvp = useCallback((eventId: string): RSVPStatus | null => {
-    return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.coach_name === coachName)?.response ?? null;
-  }, [coachName, rsvps]);
+    return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.user_id === session?.user.id)?.response ?? null;
+  }, [rsvps, session?.user.id]);
 
   const attendancePercent = useMemo(() => {
     const totalSlots = events.length * Math.max(coaches.length, 1);
@@ -423,6 +436,48 @@ export default function Page() {
     await client.auth.signOut();
     setSession(null);
     setCurrentCoach(null);
+    setCurrentProfile(null);
+  }
+
+  async function completeProfile(event: FormEvent) {
+    event.preventDefault();
+    const client = supabase;
+    const user = session?.user;
+    const fullName = profileName.trim();
+
+    if (!client || !user) {
+      setStatus("Sign in before completing your profile.");
+      return;
+    }
+    if (!currentCoach) {
+      setStatus("This login is not on the active coaches invite list.");
+      return;
+    }
+    if (!fullName) {
+      setStatus("Enter your full name.");
+      return;
+    }
+
+    const payload = {
+      id: user.id,
+      full_name: fullName,
+      email: user.email ?? currentCoach.email
+    };
+    const { data, error } = await client
+      .from("profiles")
+      .upsert(payload, { onConflict: "id" })
+      .select("id,full_name,email,created_at")
+      .single();
+
+    if (error) {
+      setStatus(`Profile save failed: ${error.message}`);
+      return;
+    }
+
+    setCurrentProfile(data as CoachProfile);
+    setProfileName(fullName);
+    setStatus("Profile saved.");
+    await loadData(session);
   }
 
   async function createEvent(event: FormEvent) {
@@ -498,22 +553,37 @@ export default function Page() {
 
   async function respondToEvent(eventId: string, response: RSVPStatus) {
     const client = supabase;
+    const user = session?.user;
     if (!client) {
       setRsvpError("Supabase is not configured.");
+      return;
+    }
+    if (!user) {
+      setRsvpError("Sign in before saving an RSVP.");
+      return;
+    }
+    if (!currentCoach) {
+      setRsvpError("This login is not on the active coaches invite list.");
+      return;
+    }
+    if (!currentProfile) {
+      setRsvpError("Complete your profile before saving an RSVP.");
+      setStatus("Complete your profile before saving an RSVP.");
       return;
     }
 
     const payload = {
       event_id: eventId,
-      coach_name: coachName,
+      user_id: user.id,
+      coach_name: currentProfile.full_name,
       response
     };
 
     const { data, error } = await client
       .schema("public")
       .from("rsvps")
-      .upsert(payload, { onConflict: "event_id,coach_name" })
-      .select("id,event_id,coach_name,response,created_at")
+      .upsert(payload, { onConflict: "event_id,user_id" })
+      .select("id,event_id,user_id,coach_name,response,created_at")
       .single();
 
     if (error) {
@@ -528,7 +598,7 @@ export default function Page() {
     if (data) {
       const savedRsvp = data as RsvpRecord;
       setRsvps((existingRsvps) => [
-        ...existingRsvps.filter((rsvp) => !(rsvp.event_id === savedRsvp.event_id && rsvp.coach_name === savedRsvp.coach_name)),
+        ...existingRsvps.filter((rsvp) => !(rsvp.event_id === savedRsvp.event_id && rsvp.user_id === savedRsvp.user_id)),
         savedRsvp
       ]);
     }
@@ -698,13 +768,26 @@ export default function Page() {
               </div>
               <div className="flex items-center gap-2">
                 <button className="grid h-11 w-11 place-items-center rounded-lg border border-line bg-graphite/70" title="Notifications"><Icon name="Bell" /></button>
-                <div className="grid h-11 w-11 place-items-center rounded-lg bg-white text-sm font-black text-ink">{initials(currentCoach?.full_name, session?.user.email)}</div>
+                <div className="grid h-11 w-11 place-items-center rounded-lg bg-white text-sm font-black text-ink">{initials(coachName, session?.user.email)}</div>
               </div>
             </div>
             {!isConfigured && <p className="mt-3 rounded-lg border border-orange/30 bg-orange/10 p-3 text-sm font-bold text-orange">Supabase env vars are missing. Add `.env.local` values and restart the app.</p>}
             {loading && <p className="mt-3 rounded-lg bg-white/10 p-3 text-sm text-white/70">Loading persistent staff data...</p>}
             {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
           </header>
+
+          {needsProfile && (
+            <form onSubmit={completeProfile} className="mb-4 rounded-lg border border-orange/30 bg-charcoal/95 p-4 shadow-glow">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1">
+                  <label className="text-xs font-bold uppercase tracking-wide text-orange">Complete Profile</label>
+                  <p className="mt-1 text-sm text-white/60">Enter your full name once. Your RSVPs will use this coach name automatically.</p>
+                  <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="mt-3 min-h-12 w-full rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Coach full name" required />
+                </div>
+                <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Save Profile</button>
+              </div>
+            </form>
+          )}
 
           {section === "Home" && (
             <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">

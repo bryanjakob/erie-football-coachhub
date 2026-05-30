@@ -34,6 +34,13 @@ export type CoachAccount = {
   created_at: string;
 };
 
+export type CoachProfile = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  created_at: string;
+};
+
 export type StaffEventRecord = {
   id: string;
   title: string;
@@ -46,6 +53,7 @@ export type StaffEventRecord = {
 export type RsvpRecord = {
   id: string;
   event_id: string;
+  user_id: string;
   coach_name: string;
   response: RSVPStatus;
   created_at: string;
