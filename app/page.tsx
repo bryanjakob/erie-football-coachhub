@@ -11,9 +11,9 @@ import {
   type ChatMessageRecord,
   type CoachAccount,
   type CoachRole,
-  type AttendanceRecord,
   type EventType,
   type InstallLibraryFileRecord,
+  type RsvpRecord,
   type RSVPStatus,
   type StaffChannel,
   type StaffEventRecord
@@ -50,9 +50,7 @@ const initialEventForm: EventForm = {
 
 const statusStyles: Record<RSVPStatus, string> = {
   Yes: "bg-lime/15 text-lime ring-lime/30",
-  No: "bg-red-500/15 text-red-200 ring-red-400/30",
-  Late: "bg-gold/15 text-gold ring-gold/30",
-  Pending: "bg-white/10 text-white/60 ring-white/15"
+  No: "bg-red-500/15 text-red-200 ring-red-400/30"
 };
 
 function Icon({ name }: { name: Section | "Bell" | "Lock" | "Upload" | "Download" | "Search" | "Plus" }) {
@@ -89,6 +87,10 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
 
 function StatusPill({ status }: { status: RSVPStatus }) {
   return <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusStyles[status]}`}>{status}</span>;
+}
+
+function RsvpSelection({ response }: { response: RSVPStatus | null }) {
+  return response ? <StatusPill status={response} /> : <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/15">No RSVP</span>;
 }
 
 function formatDateTime(value: string) {
@@ -198,7 +200,8 @@ export default function Page() {
   const [currentCoach, setCurrentCoach] = useState<CoachAccount | null>(null);
   const [coaches, setCoaches] = useState<CoachAccount[]>([]);
   const [events, setEvents] = useState<StaffEventRecord[]>([]);
-  const [rsvps, setRsvps] = useState<AttendanceRecord[]>([]);
+  const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
+  const [rsvpError, setRsvpError] = useState("");
   const [installFiles, setInstallFiles] = useState<InstallLibraryFileRecord[]>([]);
   const [channels, setChannels] = useState<ChatChannelRecord[]>([]);
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
@@ -286,7 +289,7 @@ export default function Page() {
       announcementsResult
     ] = await Promise.all([
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
-      client.from("attendance").select("*"),
+      client.schema("public").from("rsvps").select("id,event_id,coach_name,response,created_at"),
       client.from("install_library_files").select("*").order("created_at", { ascending: false }),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
       client.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
@@ -302,7 +305,7 @@ export default function Page() {
     }
 
     setCoaches((coachesResult.data ?? []) as CoachAccount[]);
-    setRsvps((rsvpsResult.data ?? []) as AttendanceRecord[]);
+    setRsvps((rsvpsResult.data ?? []) as RsvpRecord[]);
     setInstallFiles((filesResult.data ?? []) as InstallLibraryFileRecord[]);
     setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
     setAnnouncements((announcementsResult.data ?? []) as AnnouncementRecord[]);
@@ -353,7 +356,7 @@ export default function Page() {
     const channel = client
       .channel("coachhub-persistent-data")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void fetchEvents(client))
-      .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, () => void loadData(session))
+      .on("postgres_changes", { event: "*", schema: "public", table: "rsvps" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "install_library_files" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "coaches" }, () => void loadData(session))
@@ -370,26 +373,24 @@ export default function Page() {
     [events]
   );
 
+  const coachName = currentCoach?.full_name ?? session?.user.email ?? "Coach";
+
   const eventRsvpSummary = useCallback((eventId: string) => {
     const eventRsvps = rsvps.filter((rsvp) => rsvp.event_id === eventId);
-    const summary = { Yes: 0, No: 0, Late: 0, Pending: 0 } satisfies Record<RSVPStatus, number>;
-    for (const coach of coaches) {
-      const response = eventRsvps.find((rsvp) => rsvp.coach_id === coach.id);
-      summary[response?.status ?? "Pending"] += 1;
-    }
-    return summary;
-  }, [coaches, rsvps]);
+    return {
+      Yes: eventRsvps.filter((rsvp) => rsvp.response === "Yes").length,
+      No: eventRsvps.filter((rsvp) => rsvp.response === "No").length
+    } satisfies Record<RSVPStatus, number>;
+  }, [rsvps]);
 
-  const myRsvp = useCallback((eventId: string): RSVPStatus => {
-    if (!currentCoach) return "Pending";
-    return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.coach_id === currentCoach.id)?.status ?? "Pending";
-  }, [currentCoach, rsvps]);
+  const myRsvp = useCallback((eventId: string): RSVPStatus | null => {
+    return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.coach_name === coachName)?.response ?? null;
+  }, [coachName, rsvps]);
 
   const attendancePercent = useMemo(() => {
     const totalSlots = events.length * Math.max(coaches.length, 1);
     if (!totalSlots) return 0;
-    const yesLike = rsvps.filter((rsvp) => rsvp.status === "Yes" || rsvp.status === "Late").length;
-    return Math.round((yesLike / totalSlots) * 100);
+    return Math.round((rsvps.filter((rsvp) => rsvp.response === "Yes").length / totalSlots) * 100);
   }, [coaches.length, events.length, rsvps]);
 
   async function login(email: string, password: string) {
@@ -492,15 +493,40 @@ export default function Page() {
 
   async function respondToEvent(eventId: string, response: RSVPStatus) {
     const client = supabase;
-    if (!client || !currentCoach) return;
-    const { error } = await client.from("attendance").upsert({
+    if (!client) {
+      setRsvpError("Supabase is not configured.");
+      return;
+    }
+
+    const payload = {
       event_id: eventId,
-      coach_id: currentCoach.id,
-      status: response,
-      updated_at: new Date().toISOString()
-    });
-    setStatus(error ? error.message : "RSVP saved.");
-    await loadData(session);
+      coach_name: coachName,
+      response
+    };
+
+    const { data, error } = await client
+      .schema("public")
+      .from("rsvps")
+      .upsert(payload, { onConflict: "event_id,coach_name" })
+      .select("id,event_id,coach_name,response,created_at")
+      .single();
+
+    if (error) {
+      const message = `RSVP save failed: ${error.message}`;
+      setRsvpError(message);
+      setStatus(message);
+      return;
+    }
+
+    setRsvpError("");
+    setStatus("RSVP saved.");
+    if (data) {
+      const savedRsvp = data as RsvpRecord;
+      setRsvps((existingRsvps) => [
+        ...existingRsvps.filter((rsvp) => !(rsvp.event_id === savedRsvp.event_id && rsvp.coach_name === savedRsvp.coach_name)),
+        savedRsvp
+      ]);
+    }
   }
 
   async function postAnnouncement(event: FormEvent) {
@@ -623,10 +649,11 @@ export default function Page() {
     [messages, selectedChannel]
   );
 
-  const coachName = currentCoach?.full_name ?? session?.user.email ?? "Coach";
   const teamName = "Erie Football";
   const nextEvent = upcomingEvents[0];
-  const nextSummary = nextEvent ? eventRsvpSummary(nextEvent.id) : { Yes: 0, No: 0, Late: 0, Pending: 0 };
+  const totalYes = rsvps.filter((rsvp) => rsvp.response === "Yes").length;
+  const totalNo = rsvps.filter((rsvp) => rsvp.response === "No").length;
+  const nextSummary = nextEvent ? eventRsvpSummary(nextEvent.id) : { Yes: 0, No: 0 };
 
   return (
     <main className="field-markings min-h-screen pb-24 lg:pb-6">
@@ -684,10 +711,10 @@ export default function Page() {
                           <h2 className="mt-1 text-2xl font-black">{nextEvent.title}</h2>
                           <p className="mt-1 text-sm text-white/60">{formatDateTime(nextEvent.date)}</p>
                         </div>
-                        <StatusPill status={myRsvp(nextEvent.id)} />
+                        <RsvpSelection response={myRsvp(nextEvent.id)} />
                       </div>
-                      <div className="mt-4 grid grid-cols-3 gap-2">
-                        {(["Yes", "Late", "No"] as RSVPStatus[]).map((response) => (
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        {(["Yes", "No"] as RSVPStatus[]).map((response) => (
                           <button key={response} onClick={() => respondToEvent(nextEvent.id, response)} className={`min-h-14 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
                         ))}
                       </div>
@@ -710,9 +737,9 @@ export default function Page() {
                   <h2 className="text-lg font-black">Attendance Summary</h2>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <Metric label="Trend" value={`${attendancePercent}%`} tone="text-lime" />
-                    <Metric label="Yes" value={`${nextSummary.Yes}`} tone="text-lime" />
-                    <Metric label="Late" value={`${nextSummary.Late}`} tone="text-gold" />
-                    <Metric label="Pending" value={`${nextSummary.Pending}`} />
+                    <Metric label="Yes" value={`${totalYes || nextSummary.Yes}`} tone="text-lime" />
+                    <Metric label="No" value={`${totalNo || nextSummary.No}`} tone="text-red-200" />
+                    <Metric label="Events" value={`${events.length}`} />
                   </div>
                 </section>
                 <section className="rounded-lg border border-line bg-white/[0.055] p-4">
@@ -758,6 +785,7 @@ export default function Page() {
                 <h2 className="text-xl font-black">Live RSVP Board</h2>
                 <div className="mt-4 space-y-3">
                   {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
+                  {rsvpError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{rsvpError}</p>}
                   {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-ink/50 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
                   {events.map((event) => (
                     <div key={event.id} className="rounded-lg bg-ink/50 p-3">
@@ -771,8 +799,12 @@ export default function Page() {
                         </span>
                       </div>
                       {event.description && <p className="mt-3 whitespace-pre-line text-sm text-white/75">{event.description}</p>}
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        {(["Yes", "Late", "No"] as RSVPStatus[]).map((response) => (
+                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-white/[0.045] px-3 py-2 text-sm">
+                        <span className="font-bold text-white/70">Your response</span>
+                        {myRsvp(event.id) ? <StatusPill status={myRsvp(event.id) as RSVPStatus} /> : <span className="font-bold text-white/45">Not selected</span>}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {(["Yes", "No"] as RSVPStatus[]).map((response) => (
                           <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-11 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
                         ))}
                       </div>
@@ -914,7 +946,9 @@ export default function Page() {
                         <div className="font-black">{coach.full_name}</div>
                         <div className="text-sm text-white/50">{coach.role} - {coach.position_group ?? "Staff"} - {coach.email}</div>
                       </div>
-                      <StatusPill status={coach.auth_user_id ? "Yes" : "Pending"} />
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.auth_user_id ? "bg-lime/15 text-lime ring-lime/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
+                        {coach.auth_user_id ? "Active" : "Pending"}
+                      </span>
                     </div>
                   ))}
                 </div>

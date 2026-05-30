@@ -53,6 +53,15 @@ create table if not exists attendance (
   primary key (event_id, coach_id)
 );
 
+create table if not exists rsvps (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid references events(id) on delete cascade,
+  coach_name text not null,
+  response text not null check (response in ('Yes', 'No')),
+  created_at timestamptz not null default now(),
+  unique (event_id, coach_name)
+);
+
 create table if not exists install_library_files (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -100,6 +109,7 @@ on conflict (name) do nothing;
 alter table coaches enable row level security;
 alter table events enable row level security;
 alter table attendance enable row level security;
+alter table rsvps enable row level security;
 alter table install_library_files enable row level security;
 alter table chat_channels enable row level security;
 alter table chat_messages enable row level security;
@@ -219,6 +229,17 @@ with check (
   or public.is_staff_admin()
 );
 
+drop policy if exists "staff can read rsvps" on rsvps;
+create policy "staff can read rsvps" on rsvps
+for select to authenticated
+using (public.is_staff_member());
+
+drop policy if exists "staff can save rsvps" on rsvps;
+create policy "staff can save rsvps" on rsvps
+for all to authenticated
+using (public.is_staff_member())
+with check (public.is_staff_member());
+
 drop policy if exists "staff can read install library files" on install_library_files;
 create policy "staff can read install library files" on install_library_files
 for select to authenticated
@@ -308,6 +329,13 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table attendance;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table rsvps;
 exception
   when duplicate_object then null;
 end $$;

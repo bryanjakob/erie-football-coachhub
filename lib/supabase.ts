@@ -10,7 +10,7 @@ export const installBucket = "install-files";
 
 export type CoachRole = "Admin" | "Head Coach" | "Varsity Coach" | "JV Coach" | "Volunteer Coach";
 
-export type RSVPStatus = "Yes" | "No" | "Late" | "Pending";
+export type RSVPStatus = "Yes" | "No";
 
 export type EventType = "Workout" | "Practice" | "Staff Meeting" | "Camp" | "Game" | "Clinic";
 
@@ -43,12 +43,12 @@ export type StaffEventRecord = {
   created_at: string;
 };
 
-export type AttendanceRecord = {
+export type RsvpRecord = {
+  id: string;
   event_id: string;
-  coach_id: string;
-  status: RSVPStatus;
-  response_note: string | null;
-  updated_at: string;
+  coach_name: string;
+  response: RSVPStatus;
+  created_at: string;
 };
 
 export type InstallLibraryFileRecord = {
