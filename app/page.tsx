@@ -32,6 +32,13 @@ type EventForm = {
   rsvpRequired: boolean;
 };
 
+type SignUpInput = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+};
+
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
@@ -145,21 +152,30 @@ function LoginPanel({
   session,
   status,
   onLogin,
+  onSignUp,
   onReset,
   onLogout
 }: {
   session: Session | null;
   status: string;
   onLogin: (email: string, password: string) => Promise<void>;
+  onSignUp: (input: SignUpInput) => Promise<void>;
   onReset: (email: string) => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [signUpForm, setSignUpForm] = useState<SignUpInput>({ firstName: "", lastName: "", email: "", password: "" });
 
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
     await onLogin(email, password);
+  }
+
+  async function handleSignUp(event: FormEvent) {
+    event.preventDefault();
+    await onSignUp(signUpForm);
   }
 
   if (session) {
@@ -179,22 +195,40 @@ function LoginPanel({
   }
 
   return (
-    <form onSubmit={handleLogin} className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
+    <form onSubmit={mode === "signin" ? handleLogin : handleSignUp} className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
       <div className="flex items-center gap-3">
         <ErieLogo className="h-14 w-32 shrink-0" />
         <div>
-          <h2 className="text-lg font-black">Invite-Only Login</h2>
+          <h2 className="text-lg font-black">{mode === "signin" ? "Coach Login" : "Create Coach Account"}</h2>
           <p className="text-sm text-white/60">Supabase Auth keeps coaches signed in on mobile after login.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <input value={email} onChange={(event) => setEmail(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
-        <input value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required />
+      <div className="mt-4 grid grid-cols-2 rounded-lg border border-line bg-graphite/80 p-1 text-sm font-black">
+        <button type="button" onClick={() => setMode("signin")} className={`min-h-10 rounded-md ${mode === "signin" ? "bg-orange text-ink" : "text-white/70"}`}>Sign In</button>
+        <button type="button" onClick={() => setMode("signup")} className={`min-h-10 rounded-md ${mode === "signup" ? "bg-orange text-ink" : "text-white/70"}`}>Create Account</button>
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Sign In</button>
-        <button type="button" onClick={() => onReset(email)} className="min-h-12 rounded-lg border border-line px-5 font-bold text-white/80">Reset Password</button>
-      </div>
+      {mode === "signin" ? (
+        <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input value={email} onChange={(event) => setEmail(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required />
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+            <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Sign In</button>
+            <button type="button" onClick={() => onReset(email)} className="min-h-12 rounded-lg border border-line px-5 font-bold text-white/80">Reset Password</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <input value={signUpForm.firstName} onChange={(event) => setSignUpForm({ ...signUpForm, firstName: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="First name" required />
+            <input value={signUpForm.lastName} onChange={(event) => setSignUpForm({ ...signUpForm, lastName: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Last name" required />
+            <input value={signUpForm.email} onChange={(event) => setSignUpForm({ ...signUpForm, email: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
+            <input value={signUpForm.password} onChange={(event) => setSignUpForm({ ...signUpForm, password: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required minLength={6} />
+          </div>
+          <button className="mt-3 min-h-12 w-full rounded-lg bg-orange px-5 font-black text-ink">Create Account</button>
+        </>
+      )}
       {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
     </form>
   );
@@ -329,10 +363,10 @@ export default function Page() {
     const firstError = profileResult.error || coachesResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
       setStatus(firstError.message);
-    } else if (!coachAccount) {
-      setStatus("Signed in, but this account is not on the active coaches invite list.");
     } else if (!profile) {
       setStatus("Complete your profile so RSVPs can attach to your coach name.");
+    } else if (!coachAccount) {
+      setStatus("Signed in as a coach. Admin features require staff role assignment.");
     } else {
       setStatus("");
     }
@@ -391,7 +425,7 @@ export default function Page() {
   );
 
   const coachName = currentProfile?.full_name ?? currentCoach?.full_name ?? session?.user.email ?? "Coach";
-  const needsProfile = Boolean(session && currentCoach && !currentProfile);
+  const needsProfile = Boolean(session && !currentProfile);
 
   const eventRsvpSummary = useCallback((eventId: string) => {
     const eventRsvps = rsvps.filter((rsvp) => rsvp.event_id === eventId);
@@ -417,6 +451,77 @@ export default function Page() {
     setStatus("Signing in...");
     const { error } = await client.auth.signInWithPassword({ email, password });
     setStatus(error ? error.message : "Signed in.");
+  }
+
+  async function signUpCoach(input: SignUpInput) {
+    const client = supabase;
+    if (!client) return;
+
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    const fullName = [firstName, lastName].filter(Boolean).join(" ");
+    const email = input.email.trim();
+
+    if (!firstName || !lastName || !email || !input.password) {
+      setStatus("First name, last name, email, and password are required.");
+      return;
+    }
+
+    setStatus("Creating coach account...");
+    const { data, error } = await client.auth.signUp({
+      email,
+      password: input.password,
+      options: {
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          full_name: fullName
+        }
+      }
+    });
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    let activeSession = data.session;
+    if (!activeSession) {
+      const loginResult = await client.auth.signInWithPassword({ email, password: input.password });
+      if (loginResult.error) {
+        setStatus("Account created. Check your email to confirm the account, then sign in.");
+        return;
+      }
+      activeSession = loginResult.data.session;
+    }
+
+    const userId = activeSession?.user.id ?? data.user?.id;
+    if (!userId) {
+      setStatus("Account created. Sign in to finish your profile.");
+      return;
+    }
+
+    const profilePayload = {
+      id: userId,
+      full_name: fullName,
+      email
+    };
+    const profileResult = await client
+      .from("profiles")
+      .upsert(profilePayload, { onConflict: "id" })
+      .select("id,full_name,email,created_at")
+      .single();
+
+    if (profileResult.error) {
+      setStatus(`Account created, but profile save failed: ${profileResult.error.message}`);
+      return;
+    }
+
+    setSession(activeSession);
+    setCurrentProfile(profileResult.data as CoachProfile);
+    setProfileName(fullName);
+    setStatus("Coach account created.");
+    await loadData(activeSession);
   }
 
   async function resetPassword(email: string) {
@@ -449,10 +554,6 @@ export default function Page() {
       setStatus("Sign in before completing your profile.");
       return;
     }
-    if (!currentCoach) {
-      setStatus("This login is not on the active coaches invite list.");
-      return;
-    }
     if (!fullName) {
       setStatus("Enter your full name.");
       return;
@@ -461,7 +562,7 @@ export default function Page() {
     const payload = {
       id: user.id,
       full_name: fullName,
-      email: user.email ?? currentCoach.email
+      email: user.email ?? currentCoach?.email ?? null
     };
     const { data, error } = await client
       .from("profiles")
@@ -560,10 +661,6 @@ export default function Page() {
     }
     if (!user) {
       setRsvpError("Sign in before saving an RSVP.");
-      return;
-    }
-    if (!currentCoach) {
-      setRsvpError("This login is not on the active coaches invite list.");
       return;
     }
     if (!currentProfile) {
@@ -792,7 +889,7 @@ export default function Page() {
           {section === "Home" && (
             <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
               <div className="space-y-4">
-                <LoginPanel session={session} status={status} onLogin={login} onReset={resetPassword} onLogout={logout} />
+                <LoginPanel session={session} status={status} onLogin={login} onSignUp={signUpCoach} onReset={resetPassword} onLogout={logout} />
                 <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                   {nextEvent ? (
                     <>

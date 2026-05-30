@@ -146,6 +146,11 @@ as $$
     from coaches
     where auth_user_id = auth.uid()
       and active = true
+  )
+  or exists (
+    select 1
+    from profiles
+    where id = auth.uid()
   );
 $$;
 
@@ -223,18 +228,18 @@ with check (public.is_staff_admin());
 drop policy if exists "staff can read profiles" on profiles;
 create policy "staff can read profiles" on profiles
 for select to authenticated
-using (public.is_staff_member());
+using (id = auth.uid() or public.is_staff_member());
 
 drop policy if exists "staff can insert own profile" on profiles;
 create policy "staff can insert own profile" on profiles
 for insert to authenticated
-with check (id = auth.uid() and public.is_staff_member());
+with check (id = auth.uid());
 
 drop policy if exists "staff can update own profile" on profiles;
 create policy "staff can update own profile" on profiles
 for update to authenticated
-using (id = auth.uid() and public.is_staff_member())
-with check (id = auth.uid() and public.is_staff_member());
+using (id = auth.uid() or public.is_staff_admin())
+with check (id = auth.uid() or public.is_staff_admin());
 
 drop policy if exists "staff can read events" on events;
 create policy "staff can read events" on events
