@@ -39,6 +39,7 @@ export type StaffEventRecord = {
   title: string;
   description: string | null;
   date: string;
+  rsvp_required?: boolean | null;
   created_at: string;
 };
 

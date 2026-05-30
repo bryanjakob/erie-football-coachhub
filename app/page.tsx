@@ -102,6 +102,10 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function eventRsvpRequired(event: StaffEventRecord) {
+  return event.rsvp_required ?? true;
+}
+
 function fileTypeFromMime(mime: string) {
   if (mime.includes("pdf")) return "PDF";
   if (mime.includes("image")) return "Image";
@@ -710,31 +714,26 @@ export default function Page() {
               <section className="rounded-lg border border-line bg-white/[0.055] p-4">
                 <h2 className="text-xl font-black">Live RSVP Board</h2>
                 <div className="mt-4 space-y-3">
-                  {events.map((event) => {
-                    const summary = eventRsvpSummary(event.id);
-                    return (
-                      <div key={event.id} className="rounded-lg bg-ink/50 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="font-black">{event.title}</h3>
-                            <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
-                          </div>
-                          <StatusPill status={myRsvp(event.id)} />
+                  {events.length === 0 && <p className="rounded-lg bg-ink/50 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
+                  {events.map((event) => (
+                    <div key={event.id} className="rounded-lg bg-ink/50 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="font-black">{event.title}</h3>
+                          <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
                         </div>
-                        <div className="mt-3 grid grid-cols-4 gap-2">
-                          <Metric label="Yes" value={`${summary.Yes}`} tone="text-lime" />
-                          <Metric label="Late" value={`${summary.Late}`} tone="text-gold" />
-                          <Metric label="No" value={`${summary.No}`} tone="text-red-200" />
-                          <Metric label="Open" value={`${summary.Pending}`} />
-                        </div>
-                        <div className="mt-3 grid grid-cols-3 gap-2">
-                          {(["Yes", "Late", "No"] as RSVPStatus[]).map((response) => (
-                            <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-11 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
-                          ))}
-                        </div>
+                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ring-1 ${eventRsvpRequired(event) ? "bg-lime/15 text-lime ring-lime/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
+                          RSVP {eventRsvpRequired(event) ? "Required" : "Optional"}
+                        </span>
                       </div>
-                    );
-                  })}
+                      {event.description && <p className="mt-3 whitespace-pre-line text-sm text-white/75">{event.description}</p>}
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {(["Yes", "Late", "No"] as RSVPStatus[]).map((response) => (
+                          <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-11 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </section>
             </div>
