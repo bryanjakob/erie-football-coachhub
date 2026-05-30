@@ -39,14 +39,8 @@ create table if not exists coaches (
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),
   title text not null,
-  event_type event_type not null,
-  starts_at timestamptz not null,
-  ends_at timestamptz,
-  location text,
-  notes text,
-  rsvp_required boolean not null default true,
-  google_calendar_uid text,
-  created_by uuid references coaches(id),
+  description text,
+  date timestamptz not null,
   created_at timestamptz not null default now()
 );
 

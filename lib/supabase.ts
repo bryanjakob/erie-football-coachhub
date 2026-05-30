@@ -37,13 +37,8 @@ export type CoachAccount = {
 export type StaffEventRecord = {
   id: string;
   title: string;
-  event_type: EventType;
-  starts_at: string;
-  ends_at: string | null;
-  location: string | null;
-  notes: string | null;
-  rsvp_required: boolean;
-  created_by: string | null;
+  description: string | null;
+  date: string;
   created_at: string;
 };
 

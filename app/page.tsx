@@ -245,7 +245,7 @@ export default function Page() {
       announcementsResult
     ] = await Promise.all([
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
-      client.from("events").select("*").order("starts_at", { ascending: true }),
+      client.from("events").select("*").order("date", { ascending: true }),
       client.from("attendance").select("*"),
       client.from("install_library_files").select("*").order("created_at", { ascending: false }),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
@@ -325,7 +325,7 @@ export default function Page() {
   }, [loadData, session]);
 
   const upcomingEvents = useMemo(
-    () => events.filter((event) => new Date(event.starts_at).getTime() >= Date.now() - 86400000).slice(0, 3),
+    () => events.filter((event) => new Date(event.date).getTime() >= Date.now() - 86400000).slice(0, 3),
     [events]
   );
 
@@ -381,20 +381,36 @@ export default function Page() {
   async function createEvent(event: FormEvent) {
     event.preventDefault();
     const client = supabase;
-    if (!client || !currentCoach || !isAdmin) return;
-    const startsAt = new Date(`${eventForm.date}T${eventForm.time}`).toISOString();
+    if (!client) {
+      setStatus("Supabase is not configured.");
+      return;
+    }
+    if (!eventForm.title || !eventForm.date || !eventForm.time) {
+      setStatus("Title, date, and time are required.");
+      return;
+    }
+
+    const eventDate = new Date(`${eventForm.date}T${eventForm.time}`);
+    if (Number.isNaN(eventDate.getTime())) {
+      setStatus("Enter a valid event date and time.");
+      return;
+    }
+
+    const description = [eventForm.location, eventForm.notes].filter(Boolean).join("\n\n");
     const { error } = await client.from("events").insert({
       title: eventForm.title,
-      event_type: eventForm.eventType,
-      starts_at: startsAt,
-      location: eventForm.location,
-      notes: eventForm.notes,
-      rsvp_required: eventForm.rsvpRequired,
-      created_by: currentCoach.id
+      description,
+      date: eventDate.toISOString()
     });
-    setStatus(error ? error.message : "Event saved to Supabase.");
-    if (!error) setEventForm(initialEventForm);
+
+    if (error) {
+      setStatus(`Event insert failed: ${error.message}`);
+      return;
+    }
+
+    setEventForm(initialEventForm);
     await loadData(session);
+    setStatus("Event saved.");
   }
 
   async function respondToEvent(eventId: string, response: RSVPStatus) {
@@ -575,6 +591,7 @@ export default function Page() {
             </div>
             {!isConfigured && <p className="mt-3 rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm font-bold text-gold">Supabase env vars are missing. Add `.env.local` values and restart the app.</p>}
             {loading && <p className="mt-3 rounded-lg bg-white/10 p-3 text-sm text-white/70">Loading persistent staff data...</p>}
+            {status && <p className="mt-3 rounded-lg bg-ink/60 p-3 text-sm text-white/70">{status}</p>}
           </header>
 
           {section === "Home" && (
@@ -588,7 +605,7 @@ export default function Page() {
                         <div>
                           <p className="text-xs font-bold uppercase tracking-wide text-lime">Next Required RSVP</p>
                           <h2 className="mt-1 text-2xl font-black">{nextEvent.title}</h2>
-                          <p className="mt-1 text-sm text-white/60">{formatDateTime(nextEvent.starts_at)} - {nextEvent.location}</p>
+                          <p className="mt-1 text-sm text-white/60">{formatDateTime(nextEvent.date)}</p>
                         </div>
                         <StatusPill status={myRsvp(nextEvent.id)} />
                       </div>
@@ -638,7 +655,7 @@ export default function Page() {
               <form onSubmit={createEvent} className="rounded-lg border border-line bg-white/[0.055] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-xl font-black">Create Event</h2>
-                  <button disabled={!isAdmin} className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink disabled:opacity-40" title="Create event"><Icon name="Plus" /></button>
+                  <button type="submit" className="grid h-11 w-11 place-items-center rounded-lg bg-lime text-ink" title="Create event"><Icon name="Plus" /></button>
                 </div>
                 <div className="mt-4 grid gap-3">
                   <input value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} className="min-h-12 rounded-lg border border-line bg-ink/70 px-4 text-sm outline-none ring-lime/40 placeholder:text-white/40 focus:ring-2" placeholder="Title" required />
@@ -667,7 +684,7 @@ export default function Page() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <h3 className="font-black">{event.title}</h3>
-                            <p className="mt-1 text-sm text-white/60">{formatDateTime(event.starts_at)}</p>
+                            <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
                           </div>
                           <StatusPill status={myRsvp(event.id)} />
                         </div>
@@ -702,10 +719,10 @@ export default function Page() {
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   {events.map((event) => (
                     <article key={event.id} className="rounded-lg border border-line bg-ink/50 p-4">
-                      <span className="rounded bg-white/10 px-2 py-1 text-xs font-bold">{event.event_type}</span>
+                      <span className="rounded bg-white/10 px-2 py-1 text-xs font-bold">Event</span>
                       <h3 className="mt-3 text-lg font-black">{event.title}</h3>
-                      <p className="mt-1 text-sm text-white/60">{formatDateTime(event.starts_at)} - {event.location}</p>
-                      <p className="mt-2 text-sm text-white/70">{event.notes}</p>
+                      <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
+                      <p className="mt-2 whitespace-pre-line text-sm text-white/70">{event.description}</p>
                     </article>
                   ))}
                 </div>
