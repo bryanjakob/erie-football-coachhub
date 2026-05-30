@@ -39,6 +39,12 @@ type SignUpInput = {
   password: string;
 };
 
+type ScheduleImportEvent = {
+  title: string;
+  description: string;
+  date: string;
+};
+
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
@@ -46,6 +52,49 @@ const folders = ["All", "Fronts", "Coverages", "Blitzes", "Run Fits", "Practice 
 const defaultChannels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
 const logoSrc = "/erie-football-logo.png";
+
+const summerWeekOneSchedule: ScheduleImportEvent[] = [
+  {
+    title: "OL/DL Camp",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 9:30-11:00 AM\nLocation: Thunderridge\nRSVP required: Yes",
+    date: "2026-05-31T15:30:00.000Z"
+  },
+  {
+    title: "Summer Workouts #1",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    date: "2026-06-01T13:00:00.000Z"
+  },
+  {
+    title: "Summer Workout #2",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    date: "2026-06-02T13:00:00.000Z"
+  },
+  {
+    title: "Team Pass #1",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nRSVP required: Yes",
+    date: "2026-06-02T14:30:00.000Z"
+  },
+  {
+    title: "Player Led Practice",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    date: "2026-06-03T13:00:00.000Z"
+  },
+  {
+    title: "Summer Workout #4",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    date: "2026-06-04T13:00:00.000Z"
+  },
+  {
+    title: "Team Pass Work #2",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nRSVP required: Yes",
+    date: "2026-06-04T14:30:00.000Z"
+  },
+  {
+    title: "Summer Workout #5 / Competition Friday",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    date: "2026-06-05T13:00:00.000Z"
+  }
+];
 
 const initialEventForm: EventForm = {
   title: "",
@@ -252,6 +301,8 @@ export default function Page() {
   const [eventSubmitting, setEventSubmitting] = useState(false);
   const [eventDebugMessage, setEventDebugMessage] = useState("");
   const [eventFetchError, setEventFetchError] = useState("");
+  const [scheduleImporting, setScheduleImporting] = useState(false);
+  const [scheduleImportMessage, setScheduleImportMessage] = useState("");
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
@@ -649,6 +700,62 @@ export default function Page() {
       setEventDebugMessage(message);
     } finally {
       setEventSubmitting(false);
+    }
+  }
+
+  async function importSummerSchedule() {
+    const client = supabase;
+    if (!client) {
+      setScheduleImportMessage("Supabase is not configured.");
+      return;
+    }
+    if (!isAdmin) {
+      setScheduleImportMessage("Only admins can import schedule PDFs.");
+      return;
+    }
+
+    setScheduleImporting(true);
+    setScheduleImportMessage("Importing Week 1 summer schedule...");
+
+    try {
+      const { data: existingRows, error: fetchError } = await client
+        .schema("public")
+        .from("events")
+        .select("id,title,description,date,created_at")
+        .order("date", { ascending: true });
+
+      if (fetchError) {
+        setScheduleImportMessage(`Schedule import failed: ${fetchError.message}`);
+        return;
+      }
+
+      const existingKeys = new Set(
+        ((existingRows ?? []) as StaffEventRecord[]).map((event) => `${event.title.trim().toLowerCase()}|${new Date(event.date).toISOString()}`)
+      );
+      const eventsToInsert = summerWeekOneSchedule.filter((event) => !existingKeys.has(`${event.title.trim().toLowerCase()}|${event.date}`));
+
+      if (eventsToInsert.length === 0) {
+        setScheduleImportMessage("Schedule already imported. No duplicate events created.");
+        await fetchEvents(client);
+        return;
+      }
+
+      const { error: insertError } = await client
+        .schema("public")
+        .from("events")
+        .insert(eventsToInsert.map(({ title, description, date }) => ({ title, description, date })));
+
+      if (insertError) {
+        setScheduleImportMessage(`Schedule import failed: ${insertError.message}`);
+        return;
+      }
+
+      await fetchEvents(client);
+      setScheduleImportMessage(`Imported ${eventsToInsert.length} Week 1 schedule event${eventsToInsert.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setScheduleImportMessage(error instanceof Error ? error.message : "Unknown schedule import error.");
+    } finally {
+      setScheduleImporting(false);
     }
   }
 
@@ -1140,6 +1247,20 @@ export default function Page() {
                     </div>
                   ))}
                 </div>
+              </section>
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
+                <h2 className="text-xl font-black">Import Schedule PDF</h2>
+                <p className="mt-2 text-sm text-white/60">
+                  Imports Week 1 events from the 2026 Summer Workout Outline PDF into Supabase. The importer checks existing title and date/time values first, so running it again will not create duplicates.
+                </p>
+                <div className="mt-4 rounded-lg border border-line bg-graphite/70 p-3">
+                  <div className="text-sm font-black text-white">2026 Summer Workout Outline - Week 1</div>
+                  <div className="mt-1 text-xs font-bold uppercase tracking-wide text-white/45">May 31-June 6</div>
+                </div>
+                <button type="button" onClick={importSummerSchedule} disabled={!isAdmin || scheduleImporting} className="mt-4 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink disabled:cursor-not-allowed disabled:opacity-40">
+                  {scheduleImporting ? "Importing..." : "Import Week 1 Schedule"}
+                </button>
+                {scheduleImportMessage && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{scheduleImportMessage}</p>}
               </section>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Announcements</h2>
