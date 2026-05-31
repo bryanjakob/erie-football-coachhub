@@ -272,7 +272,6 @@ function LoginPanel({
     return (
       <section className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
         <div className="flex items-center gap-3">
-          <ErieLogo className="h-12 w-28 shrink-0" />
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-black">Signed In</h2>
             <p className="truncate text-sm text-white/60">{session.user.email}</p>
@@ -919,6 +918,7 @@ export default function Page() {
   );
 
   const teamName = "Erie Football";
+  const pageTitle = section === "Home" ? "Staff Dashboard" : section;
   const nextEvent = upcomingEvents[0];
   const totalYes = rsvps.filter((rsvp) => rsvp.response === "Yes").length;
   const totalNo = rsvps.filter((rsvp) => rsvp.response === "No").length;
@@ -930,7 +930,7 @@ export default function Page() {
       <div className="mx-auto flex w-full max-w-7xl gap-4 px-3 py-3 sm:px-4 lg:px-6">
         <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-64 shrink-0 flex-col rounded-lg border border-line bg-black/90 p-4 backdrop-blur lg:flex">
           <div>
-            <ErieLogo className="h-20 w-full" />
+            <ErieLogo className="h-14 w-full" />
             <div className="mt-4 border-l-4 border-orange pl-3">
               <h1 className="text-lg font-black uppercase tracking-wide">CoachHub</h1>
               <p className="text-xs font-bold uppercase tracking-wide text-white/45">Erie Staff Only</p>
@@ -955,10 +955,8 @@ export default function Page() {
           <header className="mb-4 rounded-lg border border-line bg-black/85 p-4 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <ErieLogo className="h-12 w-24 shrink-0 sm:w-32" />
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-orange">{teamName}</p>
-                  <h1 className="mt-1 truncate text-2xl font-black sm:text-3xl">{section === "Home" ? "Staff Dashboard" : section}</h1>
+                  <h1 className="truncate text-2xl font-black sm:text-3xl">{pageTitle}</h1>
                 </div>
               </div>
               <div className="flex items-center gap-2">
