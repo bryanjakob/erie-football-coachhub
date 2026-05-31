@@ -4,6 +4,7 @@ import { positionGroups, type CoachAccount, type CoachProfile, type PositionGrou
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const unassignedPositionGroup: PositionGroup = "Unassigned";
 
 type AuthUserSummary = {
   id: string;
@@ -19,6 +20,10 @@ function normalizeEmail(email?: string | null) {
 function validPositionGroup(value?: string | null): PositionGroup | null {
   if (!value) return null;
   return positionGroups.includes(value as PositionGroup) ? (value as PositionGroup) : null;
+}
+
+function coachPositionGroup(value?: string | null) {
+  return validPositionGroup(value) ?? unassignedPositionGroup;
 }
 
 export async function POST(request: Request) {
@@ -91,7 +96,7 @@ export async function POST(request: Request) {
     fullName: typeof user.user_metadata?.full_name === "string"
       ? user.user_metadata.full_name.trim()
       : [user.user_metadata?.first_name, user.user_metadata?.last_name].filter((value) => typeof value === "string" && value.trim()).join(" ").trim() || null,
-    positionGroup: validPositionGroup(typeof user.user_metadata?.position_group === "string" ? user.user_metadata.position_group : null)
+    positionGroup: coachPositionGroup(typeof user.user_metadata?.position_group === "string" ? user.user_metadata.position_group : null)
   }));
   const authEmailById = new Map(authUsers.map((user) => [user.id, normalizeEmail(user.email)]));
   const existingCoachesCount = coaches.length;
@@ -134,7 +139,7 @@ export async function POST(request: Request) {
   for (const profile of profiles) {
     const email = normalizeEmail(profile.email) || authEmailById.get(profile.id) || "";
     const fullName = profile.full_name?.trim();
-    const positionGroup = validPositionGroup(profile.position_group);
+    const positionGroup = coachPositionGroup(profile.position_group);
 
     if (!email || !fullName) {
       errors.push(`Skipped ${fullName || profile.id}: missing email or full name.`);

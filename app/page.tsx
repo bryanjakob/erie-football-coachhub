@@ -109,6 +109,7 @@ const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
 const defaultChannels: StaffChannel[] = ["General Staff", "Offense", "Defense", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach", "Coach"];
+const editablePositionGroups = positionGroups.filter((group) => group !== "Unassigned");
 const logoSrc = "/erie-football-logo.png";
 
 function denverTimestamp(date: string, time: string) {
@@ -410,7 +411,7 @@ function LoginPanel({
             <input value={signUpForm.lastName} onChange={(event) => setSignUpForm({ ...signUpForm, lastName: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Last name" required />
             <select value={signUpForm.positionGroup} onChange={(event) => setSignUpForm({ ...signUpForm, positionGroup: event.target.value as PositionGroup })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2" required>
               <option value="">Position Group</option>
-              {positionGroups.map((group) => <option key={group}>{group}</option>)}
+              {editablePositionGroups.map((group) => <option key={group}>{group}</option>)}
             </select>
             <input value={signUpForm.email} onChange={(event) => setSignUpForm({ ...signUpForm, email: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
             <input value={signUpForm.password} onChange={(event) => setSignUpForm({ ...signUpForm, password: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required minLength={6} />
@@ -1415,7 +1416,7 @@ export default function Page() {
                     <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="min-h-12 w-full rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Coach full name" required />
                     <select value={profilePositionGroup} onChange={(event) => setProfilePositionGroup(event.target.value as PositionGroup)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2" required>
                       <option value="">Position Group</option>
-                      {positionGroups.map((group) => <option key={group}>{group}</option>)}
+                      {editablePositionGroups.map((group) => <option key={group}>{group}</option>)}
                     </select>
                   </div>
                 </div>
@@ -1882,7 +1883,7 @@ export default function Page() {
                       <div className="mt-2 space-y-1">
                         {profilesMissingFromCoaches.map((profile) => (
                           <div key={profile.id} className="text-xs font-bold text-white/70">
-                            {profile.full_name} - {profile.position_group ?? "Position Group Needed"} - {profile.email ?? "No email"}
+                            {profile.full_name} - {profile.position_group ?? "Unassigned"} - {profile.email ?? "No email"}
                           </div>
                         ))}
                       </div>
@@ -1919,7 +1920,7 @@ export default function Page() {
                     </select>
                     <select value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value as PositionGroup })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" required>
                       <option value="">Position Group</option>
-                      {positionGroups.map((group) => <option key={group}>{group}</option>)}
+                      {editablePositionGroups.map((group) => <option key={group}>{group}</option>)}
                     </select>
                   </div>
                   <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
@@ -1935,8 +1936,8 @@ export default function Page() {
                     const accountStatus = coachAccountStatus(coach, profiles, session);
                     const isActiveAccount = accountStatus === "Active";
                     const coachProfile = profiles.find((profile) => normalizeEmail(profile.email) === normalizeEmail(coach.email));
-                    const displayPositionGroup = coach.position_group ?? coachProfile?.position_group ?? "Position Group Needed";
-                    const edit = coachEdits[coach.id] ?? { fullName: coach.full_name, positionGroup: (displayPositionGroup === "Position Group Needed" ? "" : displayPositionGroup) as PositionGroup | "" };
+                    const displayPositionGroup = coach.position_group ?? coachProfile?.position_group ?? "Unassigned";
+                    const edit = coachEdits[coach.id] ?? { fullName: coach.full_name, positionGroup: displayPositionGroup as PositionGroup | "" };
 
                     return (
                       <div key={coach.id} className={`grid gap-3 rounded-lg px-3 py-3 md:grid-cols-[1fr_1fr_0.8fr_auto] md:items-center ${coach.active ? "bg-graphite/70" : "border border-white/10 bg-black/25 opacity-70"}`}>

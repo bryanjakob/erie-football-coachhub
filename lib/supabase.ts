@@ -21,7 +21,8 @@ export type PositionGroup =
   | "LB"
   | "DB"
   | "Kicker"
-  | "Long Snapper";
+  | "Long Snapper"
+  | "Unassigned";
 
 export const positionGroups: PositionGroup[] = [
   "Head Coach",
@@ -34,7 +35,8 @@ export const positionGroups: PositionGroup[] = [
   "LB",
   "DB",
   "Kicker",
-  "Long Snapper"
+  "Long Snapper",
+  "Unassigned"
 ];
 
 export type RSVPStatus = "Yes" | "No";
