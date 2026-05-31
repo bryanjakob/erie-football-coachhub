@@ -46,6 +46,21 @@ type ScheduleImportEvent = {
   date: string;
 };
 
+type SyncCoachesResult = {
+  syncedCoachesCount: number;
+  existingCoachesCount: number;
+  profilesCount: number;
+  coachesCount: number;
+  authUsersCount: number;
+  missingProfilesAfterSync: Array<{
+    id: string;
+    full_name: string;
+    email: string | null;
+    position_group: string | null;
+  }>;
+  errors: string[];
+};
+
 type CalendarView = "Month" | "Week" | "Agenda";
 
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
@@ -370,6 +385,9 @@ export default function Page() {
   const [scheduleImportMessage, setScheduleImportMessage] = useState("");
   const [detectedScheduleEvents, setDetectedScheduleEvents] = useState<ScheduleImportEvent[]>([]);
   const [insertedScheduleRows, setInsertedScheduleRows] = useState<StaffEventRecord[]>([]);
+  const [coachSyncing, setCoachSyncing] = useState(false);
+  const [coachSyncResult, setCoachSyncResult] = useState<SyncCoachesResult | null>(null);
+  const [coachSyncMessage, setCoachSyncMessage] = useState("");
   const [calendarView, setCalendarView] = useState<CalendarView>("Month");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date()));
@@ -385,6 +403,12 @@ export default function Page() {
 
   const isConfigured = Boolean(supabase);
   const isAdmin = currentCoach?.role === "Admin" && currentCoach.active;
+  const profilesMissingFromCoaches = useMemo(() => {
+    return profiles.filter((profile) => {
+      const profileEmail = normalizeEmail(profile.email);
+      return !coaches.some((coach) => coach.auth_user_id === profile.id || (profileEmail && normalizeEmail(coach.email) === profileEmail));
+    });
+  }, [coaches, profiles]);
 
   const selectedChannel = useMemo(
     () => channels.find((channel) => channel.name === channelName) ?? channels[0],
@@ -1038,6 +1062,42 @@ export default function Page() {
     await loadData(session);
   }
 
+  async function syncCoachesFromProfiles() {
+    const token = session?.access_token;
+    if (!token || !isAdmin) {
+      setCoachSyncMessage("Only an active Admin coach can sync the coach directory.");
+      return;
+    }
+
+    setCoachSyncing(true);
+    setCoachSyncMessage("Syncing profiles into Coach Accounts...");
+    setCoachSyncResult(null);
+
+    try {
+      const response = await fetch("/api/sync-coaches", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const result = (await response.json()) as Partial<SyncCoachesResult> & { error?: string };
+
+      if (!response.ok || result.error) {
+        setCoachSyncMessage(`Coach sync failed: ${result.error ?? response.statusText}`);
+        return;
+      }
+
+      const syncResult = result as SyncCoachesResult;
+      setCoachSyncResult(syncResult);
+      setCoachSyncMessage(`Synced ${syncResult.syncedCoachesCount} coach${syncResult.syncedCoachesCount === 1 ? "" : "es"}. Existing before sync: ${syncResult.existingCoachesCount}.`);
+      await loadData(session);
+    } catch (error) {
+      setCoachSyncMessage(error instanceof Error ? `Coach sync failed: ${error.message}` : "Coach sync failed.");
+    } finally {
+      setCoachSyncing(false);
+    }
+  }
+
   async function updateCoachActive(coach: CoachAccount, active: boolean) {
     const client = supabase;
     if (!client || !isAdmin) return;
@@ -1601,6 +1661,68 @@ export default function Page() {
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Coach Directory Management</h2>
                 <p className="mt-1 text-sm text-white/55">Manually manage active staff status. Coaches are never deactivated automatically.</p>
+                <div className="mt-4 rounded-lg border border-orange/25 bg-orange/10 p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wide text-orange">Sync Coaches</h3>
+                      <p className="mt-1 text-xs leading-5 text-white/60">Admin repair tool: reads profiles, checks auth users when available, and upserts missing profile records into Coach Accounts as active coaches.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={syncCoachesFromProfiles}
+                      disabled={!isAdmin || coachSyncing}
+                      className="min-h-10 rounded-lg bg-orange px-4 text-sm font-black text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {coachSyncing ? "Syncing..." : "Sync Coaches"}
+                    </button>
+                  </div>
+                  {coachSyncMessage && <p className="mt-3 rounded-lg bg-black/25 p-3 text-sm font-bold text-white/75">{coachSyncMessage}</p>}
+                  <div className="mt-3 grid gap-2 text-xs font-bold text-white/65 sm:grid-cols-3">
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="text-lg font-black text-white">{profiles.length}</div>
+                      <div className="uppercase tracking-wide text-white/40">Current profiles</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="text-lg font-black text-white">{coaches.length}</div>
+                      <div className="uppercase tracking-wide text-white/40">Coach accounts</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="text-lg font-black text-white">{profilesMissingFromCoaches.length}</div>
+                      <div className="uppercase tracking-wide text-white/40">Missing from coaches</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                    <h4 className="text-xs font-black uppercase tracking-wide text-white/45">Profiles Missing From Coaches</h4>
+                    {profilesMissingFromCoaches.length > 0 ? (
+                      <div className="mt-2 space-y-1">
+                        {profilesMissingFromCoaches.map((profile) => (
+                          <div key={profile.id} className="text-xs font-bold text-white/70">
+                            {profile.full_name} - {profile.position_group ?? "Position Group Needed"} - {profile.email ?? "No email"}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-bold text-white/50">No profiles are missing from Coach Accounts in the current app data.</p>
+                    )}
+                  </div>
+                  {coachSyncResult && (
+                    <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white/65">
+                      <div className="font-black text-white">Last Sync Result</div>
+                      <div>Synced coaches: {coachSyncResult.syncedCoachesCount}</div>
+                      <div>Existing coaches before sync: {coachSyncResult.existingCoachesCount}</div>
+                      <div>Profiles read: {coachSyncResult.profilesCount}</div>
+                      <div>Coach accounts after sync: {coachSyncResult.coachesCount}</div>
+                      <div>Auth users read: {coachSyncResult.authUsersCount}</div>
+                      <div>Missing after sync: {coachSyncResult.missingProfilesAfterSync.length}</div>
+                      {coachSyncResult.errors.length > 0 && (
+                        <div className="mt-2 rounded-lg border border-red-400/25 bg-red-500/10 p-2 text-red-100">
+                          <div className="font-black">Errors</div>
+                          {coachSyncResult.errors.map((error) => <div key={error}>{error}</div>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <form onSubmit={inviteCoach} className="mt-4 grid gap-3">
                   <input value={coachForm.fullName} onChange={(event) => setCoachForm({ ...coachForm, fullName: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Full name" required />
                   <input value={coachForm.email} onChange={(event) => setCoachForm({ ...coachForm, email: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Email" type="email" required />
