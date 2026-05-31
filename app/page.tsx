@@ -237,8 +237,28 @@ function attendanceDescription(description?: string | null) {
     .replace(/RSVP/gi, "Attendance");
 }
 
+function normalizeEmail(email?: string | null) {
+  return email?.trim().toLowerCase() ?? "";
+}
+
 function coachRoleLabel(coach: CoachAccount | null) {
   return coach?.role ?? "Coach";
+}
+
+function coachHasAuthAccount(coach: CoachAccount | null, profiles: CoachProfile[], activeSession: Session | null) {
+  if (!coach) return Boolean(activeSession);
+  if (coach.auth_user_id) return true;
+
+  const coachEmail = normalizeEmail(coach.email);
+  if (!coachEmail) return false;
+
+  if (normalizeEmail(activeSession?.user.email) === coachEmail) return true;
+
+  return profiles.some((profile) => normalizeEmail(profile.email) === coachEmail);
+}
+
+function coachAccountStatus(coach: CoachAccount | null, profiles: CoachProfile[], activeSession: Session | null) {
+  return coachHasAuthAccount(coach, profiles, activeSession) ? "Active" : "Pending";
 }
 
 function eventRsvpRequired(event: StaffEventRecord) {
@@ -316,6 +336,7 @@ export default function Page() {
   const [currentCoach, setCurrentCoach] = useState<CoachAccount | null>(null);
   const [currentProfile, setCurrentProfile] = useState<CoachProfile | null>(null);
   const [coaches, setCoaches] = useState<CoachAccount[]>([]);
+  const [profiles, setProfiles] = useState<CoachProfile[]>([]);
   const [events, setEvents] = useState<StaffEventRecord[]>([]);
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
   const [rsvpError, setRsvpError] = useState("");
@@ -393,14 +414,15 @@ export default function Page() {
       return;
     }
 
-    const userEmail = activeSession.user.email;
+    const sessionEmail = activeSession.user.email;
 
-    if (userEmail) {
+    if (sessionEmail) {
       await client.rpc("claim_my_coach_profile");
     }
 
     const [
       profileResult,
+      profilesResult,
       coachesResult,
       rsvpsResult,
       channelsResult,
@@ -408,6 +430,7 @@ export default function Page() {
       announcementsResult
     ] = await Promise.all([
       client.from("profiles").select("id,full_name,email,created_at").eq("id", activeSession.user.id).maybeSingle(),
+      client.from("profiles").select("id,full_name,email,created_at"),
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
       client.schema("public").from("rsvps").select("id,event_id,user_id,coach_name,response,created_at"),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
@@ -422,18 +445,25 @@ export default function Page() {
       .filter(Boolean) as ChatChannelRecord[];
     setChannels(orderedChannels);
 
-    setCoaches((coachesResult.data ?? []) as CoachAccount[]);
+    const coachRows = (coachesResult.data ?? []) as CoachAccount[];
+    const profileRows = (profilesResult.data ?? []) as CoachProfile[];
+    setCoaches(coachRows);
+    setProfiles(profileRows);
     setRsvps((rsvpsResult.data ?? []) as RsvpRecord[]);
     setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
     setAnnouncements((announcementsResult.data ?? []) as AnnouncementRecord[]);
 
-    const coachAccount = ((coachesResult.data ?? []) as CoachAccount[]).find((coach) => coach.auth_user_id === activeSession.user.id) ?? null;
+    const userEmail = normalizeEmail(activeSession.user.email);
+    const coachAccount =
+      coachRows.find((coach) => coach.auth_user_id === activeSession.user.id) ??
+      coachRows.find((coach) => normalizeEmail(coach.email) === userEmail) ??
+      null;
     const profile = (profileResult.data as CoachProfile | null) ?? null;
     setCurrentCoach(coachAccount);
     setCurrentProfile(profile);
     setProfileName(profile?.full_name ?? coachAccount?.full_name ?? "");
 
-    const firstError = profileResult.error || coachesResult.error || rsvpsResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
+    const firstError = profileResult.error || profilesResult.error || coachesResult.error || rsvpsResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
       setStatus(firstError.message);
     } else if (!profile) {
@@ -608,6 +638,7 @@ export default function Page() {
     setSession(null);
     setCurrentCoach(null);
     setCurrentProfile(null);
+    setProfiles([]);
   }
 
   async function completeProfile(event: FormEvent) {
@@ -905,6 +936,7 @@ export default function Page() {
   const myCompletedRsvps = events.filter((event) => Boolean(myRsvp(event.id))).length;
   const myPendingRsvps = Math.max(events.length - myCompletedRsvps, 0);
   const coachRole = coachRoleLabel(currentCoach);
+  const currentCoachStatus = coachAccountStatus(currentCoach, profiles, session);
   const schedulePreviewRows = detectedScheduleEvents.length ? detectedScheduleEvents : summerWeekOneSchedule;
 
   return (
@@ -927,7 +959,10 @@ export default function Page() {
             ))}
           </nav>
           <div className="mt-auto rounded-lg border border-line bg-graphite/70 p-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-white/40">{coachRole}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-xs font-bold uppercase tracking-wide text-white/40">{coachRole}</p>
+              {session && <span className="rounded-full bg-orange/15 px-2 py-0.5 text-[10px] font-black uppercase text-orange ring-1 ring-orange/30">{currentCoachStatus}</span>}
+            </div>
             <p className="mt-1 font-black">{coachName}</p>
             {coachEmail && <p className="truncate text-xs font-bold text-white/45">{coachEmail}</p>}
             <p className="text-sm text-white/50">{teamName}</p>
@@ -964,7 +999,7 @@ export default function Page() {
                     <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                       <div>
                         <h2 className="text-2xl font-black">{coachName}</h2>
-                        <p className="mt-1 text-sm font-bold text-white/55">{coachRole} - {teamName}</p>
+                        <p className="mt-1 text-sm font-bold text-white/55">{coachRole} - {currentCoachStatus} - {teamName}</p>
                         {coachEmail && <p className="mt-1 text-sm text-white/50">{coachEmail}</p>}
                       </div>
                       <button onClick={logout} className="min-h-10 rounded-lg border border-line px-4 text-sm font-bold text-white/80">Sign Out</button>
@@ -1277,17 +1312,22 @@ export default function Page() {
                   <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
                 </form>
                 <div className="mt-4 space-y-3">
-                  {coaches.map((coach) => (
-                    <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3">
-                      <div>
-                        <div className="font-black">{coach.full_name}</div>
-                        <div className="text-sm text-white/50">{coach.role} - {coach.position_group ?? "Staff"} - {coach.email}</div>
+                  {coaches.map((coach) => {
+                    const accountStatus = coachAccountStatus(coach, profiles, session);
+                    const isActiveAccount = accountStatus === "Active";
+
+                    return (
+                      <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3">
+                        <div className="min-w-0">
+                          <div className="font-black">{coach.full_name}</div>
+                          <div className="text-sm text-white/50">{coach.role} - {coach.position_group ?? "Staff"} - {coach.email}</div>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${isActiveAccount ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
+                          {accountStatus}
+                        </span>
                       </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.auth_user_id ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
-                        {coach.auth_user_id ? "Active" : "Pending"}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
