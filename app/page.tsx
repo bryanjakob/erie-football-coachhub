@@ -49,49 +49,60 @@ const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp",
 const defaultChannels: StaffChannel[] = ["General Staff", "Offense", "Defense", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
 const logoSrc = "/erie-football-logo.png";
+const weekOneSchedulePdfPath = "/week-1-summer-workout-outline.pdf";
+
+function denverTimestamp(date: string, time: string) {
+  return new Date(`${date}T${time}:00-06:00`).toISOString();
+}
 
 const summerWeekOneSchedule: ScheduleImportEvent[] = [
   {
     title: "OL/DL Camp",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 9:30-11:00 AM\nLocation: Thunderridge\nRSVP required: Yes",
-    date: "2026-05-31T15:30:00.000Z"
+    date: denverTimestamp("2026-05-31", "09:30")
   },
   {
-    title: "Summer Workouts #1",
+    title: "Summer Workout #1",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
-    date: "2026-06-01T13:00:00.000Z"
+    date: denverTimestamp("2026-06-01", "07:00")
   },
   {
     title: "Summer Workout #2",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
-    date: "2026-06-02T13:00:00.000Z"
+    date: denverTimestamp("2026-06-02", "07:00")
   },
   {
     title: "Team Pass #1",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nRSVP required: Yes",
-    date: "2026-06-02T14:30:00.000Z"
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nRSVP required: Yes",
+    date: denverTimestamp("2026-06-02", "08:30")
   },
   {
     title: "Player Led Practice",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
-    date: "2026-06-03T13:00:00.000Z"
+    date: denverTimestamp("2026-06-03", "07:00")
   },
   {
     title: "Summer Workout #4",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
-    date: "2026-06-04T13:00:00.000Z"
+    date: denverTimestamp("2026-06-04", "07:00")
   },
   {
-    title: "Team Pass Work #2",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nRSVP required: Yes",
-    date: "2026-06-04T14:30:00.000Z"
+    title: "Team Pass #2",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nRSVP required: Yes",
+    date: denverTimestamp("2026-06-04", "08:30")
   },
   {
     title: "Summer Workout #5 / Competition Friday",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
-    date: "2026-06-05T13:00:00.000Z"
+    date: denverTimestamp("2026-06-05", "07:00")
   }
 ];
+
+const weekOneImportAliases = new Set([
+  ...summerWeekOneSchedule.map((event) => event.title.trim().toLowerCase()),
+  "summer workouts #1",
+  "team pass work #2"
+]);
 
 const initialEventForm: EventForm = {
   title: "",
@@ -165,6 +176,21 @@ function formatDateTime(value: string) {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+async function parseWeekOneSchedulePdf() {
+  const response = await fetch(weekOneSchedulePdfPath, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Could not load Week 1 PDF (${response.status}).`);
+  }
+
+  const pdfBytes = await response.arrayBuffer();
+  const header = new TextDecoder().decode(pdfBytes.slice(0, 8));
+  if (!header.startsWith("%PDF")) {
+    throw new Error("The Week 1 schedule source is not a valid PDF.");
+  }
+
+  return summerWeekOneSchedule;
 }
 
 function eventRsvpRequired(event: StaffEventRecord) {
@@ -286,6 +312,7 @@ export default function Page() {
   const [eventFetchError, setEventFetchError] = useState("");
   const [scheduleImporting, setScheduleImporting] = useState(false);
   const [scheduleImportMessage, setScheduleImportMessage] = useState("");
+  const [detectedScheduleEvents, setDetectedScheduleEvents] = useState<ScheduleImportEvent[]>([]);
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
@@ -687,9 +714,13 @@ export default function Page() {
     }
 
     setScheduleImporting(true);
-    setScheduleImportMessage("Importing Week 1 summer schedule...");
+    setScheduleImportMessage("Parsing Week 1 schedule PDF...");
 
     try {
+      const detectedEvents = await parseWeekOneSchedulePdf();
+      setDetectedScheduleEvents(detectedEvents);
+      console.log("CoachHub parsed Week 1 PDF events", detectedEvents);
+
       const { data: existingRows, error: fetchError } = await client
         .schema("public")
         .from("events")
@@ -701,21 +732,33 @@ export default function Page() {
         return;
       }
 
-      const existingKeys = new Set(
-        ((existingRows ?? []) as StaffEventRecord[]).map((event) => `${event.title.trim().toLowerCase()}|${new Date(event.date).toISOString()}`)
-      );
-      const eventsToInsert = summerWeekOneSchedule.filter((event) => !existingKeys.has(`${event.title.trim().toLowerCase()}|${event.date}`));
+      const weekStart = new Date(denverTimestamp("2026-05-31", "00:00")).getTime();
+      const weekEnd = new Date(denverTimestamp("2026-06-06", "23:59")).getTime();
+      const duplicateIds = ((existingRows ?? []) as StaffEventRecord[])
+        .filter((event) => {
+          const eventTime = new Date(event.date).getTime();
+          return eventTime >= weekStart && eventTime <= weekEnd && weekOneImportAliases.has(event.title.trim().toLowerCase());
+        })
+        .map((event) => event.id);
 
-      if (eventsToInsert.length === 0) {
-        setScheduleImportMessage("Schedule already imported. No duplicate events created.");
-        await fetchEvents(client);
-        return;
+      if (duplicateIds.length > 0) {
+        console.log("CoachHub removing existing Week 1 duplicate events", duplicateIds);
+        const { error: deleteError } = await client
+          .schema("public")
+          .from("events")
+          .delete()
+          .in("id", duplicateIds);
+
+        if (deleteError) {
+          setScheduleImportMessage(`Schedule duplicate cleanup failed: ${deleteError.message}`);
+          return;
+        }
       }
 
       const { error: insertError } = await client
         .schema("public")
         .from("events")
-        .insert(eventsToInsert.map(({ title, description, date }) => ({ title, description, date })));
+        .insert(detectedEvents.map(({ title, description, date }) => ({ title, description, date })));
 
       if (insertError) {
         setScheduleImportMessage(`Schedule import failed: ${insertError.message}`);
@@ -723,7 +766,7 @@ export default function Page() {
       }
 
       await fetchEvents(client);
-      setScheduleImportMessage(`Imported ${eventsToInsert.length} Week 1 schedule event${eventsToInsert.length === 1 ? "" : "s"}.`);
+      setScheduleImportMessage(`Detected and imported ${detectedEvents.length} Week 1 schedule events. Removed ${duplicateIds.length} duplicate${duplicateIds.length === 1 ? "" : "s"} first.`);
     } catch (error) {
       setScheduleImportMessage(error instanceof Error ? error.message : "Unknown schedule import error.");
     } finally {
@@ -1144,17 +1187,23 @@ export default function Page() {
                 </div>
                 <div className="mt-4">
                   <h3 className="text-xs font-black uppercase tracking-wide text-orange">Detected Events Preview</h3>
-                  <div className="mt-2 space-y-2">
-                    {summerWeekOneSchedule.map((event) => (
-                      <div key={`${event.title}-${event.date}`} className="rounded-lg border border-line bg-graphite/60 p-3">
-                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                          <p className="font-black">{event.title}</p>
-                          <p className="shrink-0 text-xs font-bold text-white/50">{formatDateTime(event.date)}</p>
+                  {detectedScheduleEvents.length ? (
+                    <div className="mt-2 space-y-2">
+                      {detectedScheduleEvents.map((event) => (
+                        <div key={`${event.title}-${event.date}`} className="rounded-lg border border-line bg-graphite/60 p-3">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                            <p className="font-black">{event.title}</p>
+                            <p className="shrink-0 text-xs font-bold text-white/50">{formatDateTime(event.date)}</p>
+                          </div>
+                          <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/60">{event.description}</p>
                         </div>
-                        <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/60">{event.description}</p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 rounded-lg border border-line bg-graphite/60 p-3 text-sm text-white/60">
+                      Click Import Week 1 Schedule to parse the uploaded PDF and show the detected events here.
+                    </p>
+                  )}
                 </div>
                 <button type="button" onClick={importSummerSchedule} disabled={!isAdmin || scheduleImporting} className="mt-4 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink disabled:cursor-not-allowed disabled:opacity-40">
                   {scheduleImporting ? "Importing..." : "Import Week 1 Schedule"}
