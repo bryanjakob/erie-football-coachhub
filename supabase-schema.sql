@@ -172,6 +172,26 @@ set
   full_name = excluded.full_name,
   position_group = coalesce(coaches.position_group, excluded.position_group);
 
+insert into coaches (auth_user_id, email, full_name, role, active)
+select distinct on (rsvps.user_id)
+  rsvps.user_id,
+  lower(auth.users.email),
+  rsvps.coach_name,
+  'Coach'::coach_role,
+  true
+from rsvps
+join auth.users on auth.users.id = rsvps.user_id
+where rsvps.user_id is not null
+  and auth.users.email is not null
+on conflict (email) do update
+set
+  auth_user_id = coalesce(coaches.auth_user_id, excluded.auth_user_id),
+  full_name = coalesce(coaches.full_name, excluded.full_name);
+
+update coaches
+set active = true
+where lower(full_name) = 'jim martinez';
+
 alter table coaches enable row level security;
 alter table profiles enable row level security;
 alter table events enable row level security;

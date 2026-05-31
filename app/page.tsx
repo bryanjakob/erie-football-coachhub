@@ -377,6 +377,7 @@ export default function Page() {
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" as PositionGroup | "" });
+  const [coachEdits, setCoachEdits] = useState<Record<string, { fullName: string; positionGroup: PositionGroup | "" }>>({});
   const [profileName, setProfileName] = useState("");
   const [profilePositionGroup, setProfilePositionGroup] = useState<PositionGroup | "">("");
   const [channelName, setChannelName] = useState<StaffChannel>("General Staff");
@@ -1055,6 +1056,57 @@ export default function Page() {
     await loadData(session);
   }
 
+  async function updateCoachDirectoryDetails(coach: CoachAccount) {
+    const client = supabase;
+    if (!client || !isAdmin) return;
+
+    const edit = coachEdits[coach.id];
+    const fullName = edit?.fullName.trim() || coach.full_name;
+    const positionGroup = edit?.positionGroup || (coach.position_group as PositionGroup | null);
+
+    if (!fullName || !positionGroup) {
+      setStatus("Coach name and position group are required.");
+      return;
+    }
+
+    const { data, error } = await client
+      .from("coaches")
+      .update({
+        full_name: fullName,
+        position_group: positionGroup
+      })
+      .eq("id", coach.id)
+      .select("*")
+      .single();
+
+    if (error) {
+      setStatus(`Coach update failed: ${error.message}`);
+      return;
+    }
+
+    await client
+      .from("profiles")
+      .update({
+        full_name: fullName,
+        position_group: positionGroup
+      })
+      .eq("email", coach.email);
+
+    const updatedCoach = data as CoachAccount;
+    setCoaches((existingCoaches) =>
+      existingCoaches.map((existingCoach) =>
+        existingCoach.id === updatedCoach.id ? updatedCoach : existingCoach
+      )
+    );
+    setCoachEdits((existingEdits) => {
+      const nextEdits = { ...existingEdits };
+      delete nextEdits[coach.id];
+      return nextEdits;
+    });
+    setStatus(`${fullName} updated.`);
+    await loadData(session);
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const client = supabase;
@@ -1570,12 +1622,17 @@ export default function Page() {
                     const isActiveAccount = accountStatus === "Active";
                     const coachProfile = profiles.find((profile) => normalizeEmail(profile.email) === normalizeEmail(coach.email));
                     const displayPositionGroup = coach.position_group ?? coachProfile?.position_group ?? "Position Group Needed";
+                    const edit = coachEdits[coach.id] ?? { fullName: coach.full_name, positionGroup: (displayPositionGroup === "Position Group Needed" ? "" : displayPositionGroup) as PositionGroup | "" };
 
                     return (
                       <div key={coach.id} className={`grid gap-3 rounded-lg px-3 py-3 md:grid-cols-[1fr_1fr_0.8fr_auto] md:items-center ${coach.active ? "bg-graphite/70" : "border border-white/10 bg-black/25 opacity-70"}`}>
                         <div className="min-w-0">
                           <div className="text-[11px] font-black uppercase tracking-wide text-white/35 md:hidden">Name</div>
-                          <div className="font-black">{coach.full_name}</div>
+                          <input
+                            value={edit.fullName}
+                            onChange={(event) => setCoachEdits((existingEdits) => ({ ...existingEdits, [coach.id]: { ...edit, fullName: event.target.value } }))}
+                            className="min-h-10 w-full rounded-lg border border-line bg-black/20 px-3 text-sm font-black outline-none ring-orange/40 focus:ring-2"
+                          />
                           <div className="text-xs font-bold text-white/45">{coach.role}</div>
                         </div>
                         <div className="min-w-0">
@@ -1584,7 +1641,14 @@ export default function Page() {
                         </div>
                         <div>
                           <div className="text-[11px] font-black uppercase tracking-wide text-white/35 md:hidden">Position Group</div>
-                          <div className="text-sm font-black text-orange">{displayPositionGroup}</div>
+                          <select
+                            value={edit.positionGroup}
+                            onChange={(event) => setCoachEdits((existingEdits) => ({ ...existingEdits, [coach.id]: { ...edit, positionGroup: event.target.value as PositionGroup } }))}
+                            className="min-h-10 w-full rounded-lg border border-line bg-black/20 px-3 text-sm font-black text-orange outline-none ring-orange/40 focus:ring-2"
+                          >
+                            <option value="">Position Group</option>
+                            {positionGroups.map((group) => <option key={group}>{group}</option>)}
+                          </select>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.active ? "bg-green-500/10 text-green-300 ring-green-400/25" : "bg-white/10 text-white/55 ring-white/15"}`}>
@@ -1600,6 +1664,14 @@ export default function Page() {
                             className="min-h-9 rounded-lg border border-line px-3 text-xs font-black text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Mark {coach.active ? "Inactive" : "Active"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateCoachDirectoryDetails(coach)}
+                            disabled={!isAdmin}
+                            className="min-h-9 rounded-lg bg-orange px-3 text-xs font-black text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Save
                           </button>
                         </div>
                       </div>
