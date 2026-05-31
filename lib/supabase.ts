@@ -10,6 +10,33 @@ export const installBucket = "install-files";
 
 export type CoachRole = "Admin" | "Head Coach" | "Varsity Coach" | "JV Coach" | "Volunteer Coach";
 
+export type PositionGroup =
+  | "Head Coach"
+  | "Offensive Coordinator"
+  | "QB"
+  | "RB"
+  | "WR"
+  | "OL"
+  | "DL"
+  | "LB"
+  | "DB"
+  | "Kicker"
+  | "Long Snapper";
+
+export const positionGroups: PositionGroup[] = [
+  "Head Coach",
+  "Offensive Coordinator",
+  "QB",
+  "RB",
+  "WR",
+  "OL",
+  "DL",
+  "LB",
+  "DB",
+  "Kicker",
+  "Long Snapper"
+];
+
 export type RSVPStatus = "Yes" | "No";
 
 export type EventType = "Workout" | "Practice" | "Staff Meeting" | "Camp" | "Game" | "Clinic";
@@ -35,6 +62,7 @@ export type CoachProfile = {
   id: string;
   full_name: string;
   email: string | null;
+  position_group: PositionGroup | null;
   created_at: string;
 };
 

@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import type { CoachRole } from "@/lib/supabase";
+import { positionGroups, type CoachRole } from "@/lib/supabase";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -26,8 +26,8 @@ export async function POST(request: Request) {
     positionGroup?: string;
   };
 
-  if (!body.fullName || !body.email || !body.role || !roles.includes(body.role)) {
-    return NextResponse.json({ error: "Full name, email, and a valid role are required." }, { status: 400 });
+  if (!body.fullName || !body.email || !body.role || !roles.includes(body.role) || !body.positionGroup || !positionGroups.includes(body.positionGroup as (typeof positionGroups)[number])) {
+    return NextResponse.json({ error: "Full name, email, role, and position group are required." }, { status: 400 });
   }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
         email: body.email.toLowerCase(),
         full_name: body.fullName,
         role: body.role,
-        position_group: body.positionGroup || null,
+        position_group: body.positionGroup,
         invited_by: requester.id,
         active: true
       },
@@ -79,7 +79,8 @@ export async function POST(request: Request) {
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(body.email, {
     data: {
       coach_id: coach.id,
-      role: body.role
+      role: body.role,
+      position_group: body.positionGroup
     }
   });
 

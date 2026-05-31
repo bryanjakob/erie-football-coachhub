@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
+  positionGroups,
   supabase,
   type AnnouncementRecord,
   type ChatChannelRecord,
@@ -12,6 +13,7 @@ import {
   type CoachProfile,
   type CoachRole,
   type EventType,
+  type PositionGroup,
   type RsvpRecord,
   type RSVPStatus,
   type StaffChannel,
@@ -33,6 +35,7 @@ type EventForm = {
 type SignUpInput = {
   firstName: string;
   lastName: string;
+  positionGroup: PositionGroup | "";
   email: string;
   password: string;
 };
@@ -290,7 +293,7 @@ function LoginPanel({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [signUpForm, setSignUpForm] = useState<SignUpInput>({ firstName: "", lastName: "", email: "", password: "" });
+  const [signUpForm, setSignUpForm] = useState<SignUpInput>({ firstName: "", lastName: "", positionGroup: "", email: "", password: "" });
 
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
@@ -330,6 +333,10 @@ function LoginPanel({
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <input value={signUpForm.firstName} onChange={(event) => setSignUpForm({ ...signUpForm, firstName: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="First name" required />
             <input value={signUpForm.lastName} onChange={(event) => setSignUpForm({ ...signUpForm, lastName: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Last name" required />
+            <select value={signUpForm.positionGroup} onChange={(event) => setSignUpForm({ ...signUpForm, positionGroup: event.target.value as PositionGroup })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2" required>
+              <option value="">Position Group</option>
+              {positionGroups.map((group) => <option key={group}>{group}</option>)}
+            </select>
             <input value={signUpForm.email} onChange={(event) => setSignUpForm({ ...signUpForm, email: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="coach@school.edu" type="email" required />
             <input value={signUpForm.password} onChange={(event) => setSignUpForm({ ...signUpForm, password: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Password" type="password" required minLength={6} />
           </div>
@@ -369,8 +376,9 @@ export default function Page() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
-  const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
+  const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" as PositionGroup | "" });
   const [profileName, setProfileName] = useState("");
+  const [profilePositionGroup, setProfilePositionGroup] = useState<PositionGroup | "">("");
   const [channelName, setChannelName] = useState<StaffChannel>("General Staff");
   const [messageBody, setMessageBody] = useState("");
 
@@ -440,8 +448,8 @@ export default function Page() {
       messagesResult,
       announcementsResult
     ] = await Promise.all([
-      client.from("profiles").select("id,full_name,email,created_at").eq("id", activeSession.user.id).maybeSingle(),
-      client.from("profiles").select("id,full_name,email,created_at"),
+      client.from("profiles").select("id,full_name,email,position_group,created_at").eq("id", activeSession.user.id).maybeSingle(),
+      client.from("profiles").select("id,full_name,email,position_group,created_at"),
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
       client.schema("public").from("rsvps").select("id,event_id,user_id,coach_name,response,created_at"),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
@@ -473,6 +481,7 @@ export default function Page() {
     setCurrentCoach(coachAccount);
     setCurrentProfile(profile);
     setProfileName(profile?.full_name ?? coachAccount?.full_name ?? "");
+    setProfilePositionGroup(profile?.position_group ?? (coachAccount?.position_group as PositionGroup | null) ?? "");
 
     const firstError = profileResult.error || profilesResult.error || coachesResult.error || rsvpsResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
@@ -538,11 +547,11 @@ export default function Page() {
   );
 
   const coachName = currentProfile?.full_name ?? currentCoach?.full_name ?? session?.user.email ?? "Coach";
-  const needsProfile = Boolean(session && !currentProfile);
+  const needsProfile = Boolean(session && (!currentProfile || !currentProfile.position_group));
 
   const eventAttendanceDetails = useCallback((eventId: string) => {
-    const formatCoachName = (name: string, coach?: CoachAccount | null) => {
-      const suffix = coach?.position_group || coach?.role;
+    const formatCoachName = (name: string, coach?: CoachAccount | null, profile?: CoachProfile | null) => {
+      const suffix = coach?.position_group || profile?.position_group;
       return suffix ? `${name} - ${suffix}` : name;
     };
 
@@ -553,12 +562,24 @@ export default function Page() {
         null;
     };
 
+    const profileForRsvp = (record: RsvpRecord) => {
+      const responseName = normalizeEmail(record.coach_name);
+      return profiles.find((profile) => profile.id === record.user_id) ??
+        profiles.find((profile) => normalizeEmail(profile.full_name) === responseName) ??
+        null;
+    };
+
+    const profileForCoach = (coach: CoachAccount) => {
+      return profiles.find((profile) => normalizeEmail(profile.email) === normalizeEmail(coach.email)) ?? null;
+    };
+
     const uniqueNames = (records: RsvpRecord[]) => {
       const names = new Map<string, string>();
       records.forEach((record) => {
         const coach = coachForRsvp(record);
+        const profile = profileForRsvp(record);
         const name = record.coach_name?.trim() || "Coach";
-        names.set(record.user_id || normalizeEmail(name), formatCoachName(name, coach));
+        names.set(record.user_id || normalizeEmail(name), formatCoachName(name, coach, profile));
       });
       return Array.from(names.values()).sort((a, b) => a.localeCompare(b));
     };
@@ -575,7 +596,7 @@ export default function Page() {
         if (coachUserId && respondedUserIds.has(coachUserId)) return false;
         return !respondedNames.has(normalizeEmail(coach.full_name));
       })
-      .map((coach) => formatCoachName(coach.full_name, coach))
+      .map((coach) => formatCoachName(coach.full_name, coach, profileForCoach(coach)))
       .sort((a, b) => a.localeCompare(b));
 
     return {
@@ -605,10 +626,11 @@ export default function Page() {
     const firstName = input.firstName.trim();
     const lastName = input.lastName.trim();
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
+    const positionGroup = input.positionGroup;
     const email = input.email.trim();
 
-    if (!firstName || !lastName || !email || !input.password) {
-      setStatus("First name, last name, email, and password are required.");
+    if (!firstName || !lastName || !positionGroup || !email || !input.password) {
+      setStatus("First name, last name, position group, email, and password are required.");
       return;
     }
 
@@ -620,7 +642,8 @@ export default function Page() {
         data: {
           first_name: firstName,
           last_name: lastName,
-          full_name: fullName
+          full_name: fullName,
+          position_group: positionGroup
         }
       }
     });
@@ -649,12 +672,13 @@ export default function Page() {
     const profilePayload = {
       id: userId,
       full_name: fullName,
-      email
+      email,
+      position_group: positionGroup
     };
     const profileResult = await client
       .from("profiles")
       .upsert(profilePayload, { onConflict: "id" })
-      .select("id,full_name,email,created_at")
+      .select("id,full_name,email,position_group,created_at")
       .single();
 
     if (profileResult.error) {
@@ -665,6 +689,7 @@ export default function Page() {
     setSession(activeSession);
     setCurrentProfile(profileResult.data as CoachProfile);
     setProfileName(fullName);
+    setProfilePositionGroup(positionGroup);
     setStatus("Coach account created.");
     await loadData(activeSession);
   }
@@ -695,25 +720,27 @@ export default function Page() {
     const client = supabase;
     const user = session?.user;
     const fullName = profileName.trim();
+    const positionGroup = profilePositionGroup;
 
     if (!client || !user) {
       setStatus("Sign in before completing your profile.");
       return;
     }
-    if (!fullName) {
-      setStatus("Enter your full name.");
+    if (!fullName || !positionGroup) {
+      setStatus("Enter your full name and position group.");
       return;
     }
 
     const payload = {
       id: user.id,
       full_name: fullName,
-      email: user.email ?? currentCoach?.email ?? null
+      email: user.email ?? currentCoach?.email ?? null,
+      position_group: positionGroup
     };
     const { data, error } = await client
       .from("profiles")
       .upsert(payload, { onConflict: "id" })
-      .select("id,full_name,email,created_at")
+      .select("id,full_name,email,position_group,created_at")
       .single();
 
     if (error) {
@@ -723,6 +750,7 @@ export default function Page() {
 
     setCurrentProfile(data as CoachProfile);
     setProfileName(fullName);
+    setProfilePositionGroup(positionGroup);
     setStatus("Profile saved.");
     await loadData(session);
   }
@@ -912,6 +940,10 @@ export default function Page() {
     event.preventDefault();
     const client = supabase;
     if (!client || !currentCoach || !isAdmin) return;
+    if (!coachForm.group) {
+      setStatus("Choose a position group before inviting a coach.");
+      return;
+    }
     const token = session?.access_token;
     if (!token) return;
     const response = await fetch("/api/invite-coach", {
@@ -981,6 +1013,7 @@ export default function Page() {
   const teamName = "Erie Football";
   const pageTitle = section === "Home" ? "Staff Dashboard" : section;
   const coachEmail = currentProfile?.email ?? currentCoach?.email ?? session?.user.email ?? "";
+  const coachPositionGroup = currentProfile?.position_group ?? currentCoach?.position_group ?? "";
   const nextEvent = upcomingEvents[0];
   const myCompletedRsvps = events.filter((event) => Boolean(myRsvp(event.id))).length;
   const myPendingRsvps = Math.max(events.length - myCompletedRsvps, 0);
@@ -1027,6 +1060,7 @@ export default function Page() {
               {session && <span className="rounded-full bg-orange/15 px-2 py-0.5 text-[10px] font-black uppercase text-orange ring-1 ring-orange/30">{currentCoachStatus}</span>}
             </div>
             <p className="mt-1 font-black">{coachName}</p>
+            {coachPositionGroup && <p className="text-xs font-black uppercase tracking-wide text-orange">{coachPositionGroup}</p>}
             {coachEmail && <p className="truncate text-xs font-bold text-white/45">{coachEmail}</p>}
             <p className="text-sm text-white/50">{teamName}</p>
           </div>
@@ -1045,8 +1079,14 @@ export default function Page() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   <label className="text-xs font-bold uppercase tracking-wide text-orange">Complete Profile</label>
-                  <p className="mt-1 text-sm text-white/60">Enter your full name once. Your attendance responses will use this coach name automatically.</p>
-                  <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="mt-3 min-h-12 w-full rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Coach full name" required />
+                  <p className="mt-1 text-sm text-white/60">Enter your full name and position group once. Attendance responses will use this coach profile automatically.</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="min-h-12 w-full rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Coach full name" required />
+                    <select value={profilePositionGroup} onChange={(event) => setProfilePositionGroup(event.target.value as PositionGroup)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 focus:ring-2" required>
+                      <option value="">Position Group</option>
+                      {positionGroups.map((group) => <option key={group}>{group}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Save Profile</button>
               </div>
@@ -1062,6 +1102,7 @@ export default function Page() {
                     <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                       <div>
                         <h2 className="text-2xl font-black">{coachName}</h2>
+                        {coachPositionGroup && <p className="mt-1 text-sm font-black text-orange">{coachName} - {coachPositionGroup}</p>}
                         <p className="mt-1 text-sm font-bold text-white/55">{coachRole} - {currentCoachStatus} - {teamName}</p>
                         {coachEmail && <p className="mt-1 text-sm text-white/50">{coachEmail}</p>}
                       </div>
@@ -1419,7 +1460,10 @@ export default function Page() {
                     <select value={coachForm.role} onChange={(event) => setCoachForm({ ...coachForm, role: event.target.value as CoachRole })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none">
                       {coachRoles.map((role) => <option key={role}>{role}</option>)}
                     </select>
-                    <input value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Position group" />
+                    <select value={coachForm.group} onChange={(event) => setCoachForm({ ...coachForm, group: event.target.value as PositionGroup })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" required>
+                      <option value="">Position Group</option>
+                      {positionGroups.map((group) => <option key={group}>{group}</option>)}
+                    </select>
                   </div>
                   <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
                 </form>
@@ -1427,12 +1471,14 @@ export default function Page() {
                   {coaches.map((coach) => {
                     const accountStatus = coachAccountStatus(coach, profiles, session);
                     const isActiveAccount = accountStatus === "Active";
+                    const coachProfile = profiles.find((profile) => normalizeEmail(profile.email) === normalizeEmail(coach.email));
+                    const displayPositionGroup = coach.position_group ?? coachProfile?.position_group ?? "Position Group Needed";
 
                     return (
                       <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3">
                         <div className="min-w-0">
                           <div className="font-black">{coach.full_name}</div>
-                          <div className="text-sm text-white/50">{coach.role} - {coach.position_group ?? "Staff"} - {coach.email}</div>
+                          <div className="text-sm text-white/50">{coach.role} - {displayPositionGroup} - {coach.email}</div>
                         </div>
                         <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${isActiveAccount ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
                           {accountStatus}

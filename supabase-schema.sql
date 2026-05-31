@@ -40,8 +40,11 @@ create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
   email text,
+  position_group text,
   created_at timestamptz not null default now()
 );
+
+alter table profiles add column if not exists position_group text;
 
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),
