@@ -341,7 +341,7 @@ function profileFromAuthMetadata(activeSession: Session) {
   const lastName = metadataString(metadata, "last_name");
   const fullName = metadataString(metadata, "full_name") || [firstName, lastName].filter(Boolean).join(" ");
   const positionGroupValue = metadataString(metadata, "position_group");
-  const positionGroup = positionGroups.includes(positionGroupValue as PositionGroup) ? (positionGroupValue as PositionGroup) : "";
+  const positionGroup = positionGroups.includes(positionGroupValue as PositionGroup) ? (positionGroupValue as PositionGroup) : null;
 
   return {
     fullName,
@@ -573,19 +573,21 @@ export default function Page() {
           const ensuredAccount = await ensureCoachAccount(metadataProfile.fullName, metadataProfile.positionGroup, activeSession.access_token);
           if (ensuredAccount.profile) {
             profile = ensuredAccount.profile;
+            const ensuredProfile = ensuredAccount.profile;
             setProfiles((existingProfiles) => [
-              ...existingProfiles.filter((existingProfile) => existingProfile.id !== ensuredAccount.profile?.id),
-              ensuredAccount.profile
-            ].filter(Boolean) as CoachProfile[]);
+              ...existingProfiles.filter((existingProfile) => existingProfile.id !== ensuredProfile.id),
+              ensuredProfile
+            ]);
           }
           if (ensuredAccount.coach) {
             resolvedCoachAccount = ensuredAccount.coach;
+            const ensuredCoach = ensuredAccount.coach;
             setCoaches((existingCoaches) => {
               const nextCoaches = [
-                ...existingCoaches.filter((coach) => coach.id !== ensuredAccount.coach?.id),
-                ensuredAccount.coach
+                ...existingCoaches.filter((coach) => coach.id !== ensuredCoach.id),
+                ensuredCoach
               ];
-              return (nextCoaches.filter(Boolean) as CoachAccount[]).sort((a, b) => a.created_at.localeCompare(b.created_at));
+              return nextCoaches.sort((a, b) => a.created_at.localeCompare(b.created_at));
             });
           }
         } catch (error) {
