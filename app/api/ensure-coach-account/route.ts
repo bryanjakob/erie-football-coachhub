@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         auth_user_id: existingCoach.auth_user_id ?? userResult.user.id,
         full_name: fullName,
         position_group: positionGroup,
-        active: existingCoach.active
+        active: true
       })
       .eq("id", existingCoach.id)
       .select("*")

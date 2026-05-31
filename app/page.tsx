@@ -480,18 +480,23 @@ export default function Page() {
       null;
     const profile = (profileResult.data as CoachProfile | null) ?? null;
     let resolvedCoachAccount = coachAccount;
-    if (!resolvedCoachAccount && profile?.position_group && activeSession.access_token) {
+    if (profile?.position_group && activeSession.access_token && (!resolvedCoachAccount || !resolvedCoachAccount.auth_user_id)) {
       try {
         const ensuredCoach = await ensureCoachAccount(profile.full_name, profile.position_group, activeSession.access_token);
         if (ensuredCoach) {
           resolvedCoachAccount = ensuredCoach;
-          setCoaches((existingCoaches) => [
-            ...existingCoaches.filter((coach) => coach.id !== ensuredCoach.id),
-            ensuredCoach
-          ]);
+          setCoaches((existingCoaches) => {
+            const nextCoaches = [
+              ...existingCoaches.filter((coach) => coach.id !== ensuredCoach.id),
+              ensuredCoach
+            ];
+            return nextCoaches.sort((a, b) => a.created_at.localeCompare(b.created_at));
+          });
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : "Coach directory sync failed.";
         console.warn("CoachHub ensure coach account failed", error);
+        setStatus(`Coach directory sync failed: ${message}`);
       }
     }
 
