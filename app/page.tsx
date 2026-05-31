@@ -383,7 +383,7 @@ export default function Page() {
   const [messageBody, setMessageBody] = useState("");
 
   const isConfigured = Boolean(supabase);
-  const isAdmin = currentCoach?.role === "Admin";
+  const isAdmin = currentCoach?.role === "Admin" && currentCoach.active;
 
   const selectedChannel = useMemo(
     () => channels.find((channel) => channel.name === channelName) ?? channels[0],
@@ -450,7 +450,7 @@ export default function Page() {
     ] = await Promise.all([
       client.from("profiles").select("id,full_name,email,position_group,created_at").eq("id", activeSession.user.id).maybeSingle(),
       client.from("profiles").select("id,full_name,email,position_group,created_at"),
-      client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
+      client.from("coaches").select("*").order("created_at", { ascending: true }),
       client.schema("public").from("rsvps").select("id,event_id,user_id,coach_name,response,created_at"),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
       client.from("chat_messages").select("id,channel_id,user_id,coach_name,message,created_at").order("created_at", { ascending: true }),
@@ -557,7 +557,9 @@ export default function Page() {
 
     const coachForRsvp = (record: RsvpRecord) => {
       const responseName = normalizeEmail(record.coach_name);
+      const profile = profiles.find((coachProfile) => coachProfile.id === record.user_id);
       return coaches.find((coach) => coach.auth_user_id === record.user_id) ??
+        coaches.find((coach) => normalizeEmail(coach.email) === normalizeEmail(profile?.email)) ??
         coaches.find((coach) => normalizeEmail(coach.full_name) === responseName) ??
         null;
     };
@@ -573,6 +575,11 @@ export default function Page() {
       return profiles.find((profile) => normalizeEmail(profile.email) === normalizeEmail(coach.email)) ?? null;
     };
 
+    const activeCoachForRsvp = (record: RsvpRecord) => {
+      const coach = coachForRsvp(record);
+      return coach?.active ? coach : null;
+    };
+
     const uniqueNames = (records: RsvpRecord[]) => {
       const names = new Map<string, string>();
       records.forEach((record) => {
@@ -585,11 +592,12 @@ export default function Page() {
     };
 
     const eventRsvps = rsvps.filter((rsvp) => rsvp.event_id === eventId);
-    const attending = uniqueNames(eventRsvps.filter((rsvp) => rsvp.response === "Yes"));
-    const notAttending = uniqueNames(eventRsvps.filter((rsvp) => rsvp.response === "No"));
-    const respondedUserIds = new Set(eventRsvps.map((rsvp) => rsvp.user_id).filter(Boolean));
-    const respondedNames = new Set(eventRsvps.map((rsvp) => normalizeEmail(rsvp.coach_name)).filter(Boolean));
-    const activeCoaches = coaches.filter((coach) => coachHasAuthAccount(coach, profiles, session));
+    const activeRsvps = eventRsvps.filter((rsvp) => activeCoachForRsvp(rsvp));
+    const attending = uniqueNames(activeRsvps.filter((rsvp) => rsvp.response === "Yes"));
+    const notAttending = uniqueNames(activeRsvps.filter((rsvp) => rsvp.response === "No"));
+    const respondedUserIds = new Set(activeRsvps.map((rsvp) => rsvp.user_id).filter(Boolean));
+    const respondedNames = new Set(activeRsvps.map((rsvp) => normalizeEmail(rsvp.coach_name)).filter(Boolean));
+    const activeCoaches = coaches.filter((coach) => coach.active);
     const noResponse = activeCoaches
       .filter((coach) => {
         const coachUserId = coachAccountUserId(coach, profiles, session);
@@ -966,6 +974,29 @@ export default function Page() {
     await loadData(session);
   }
 
+  async function updateCoachActive(coach: CoachAccount, active: boolean) {
+    const client = supabase;
+    if (!client || !isAdmin) return;
+
+    const { error } = await client
+      .from("coaches")
+      .update({ active })
+      .eq("id", coach.id);
+
+    if (error) {
+      setStatus(`Coach status update failed: ${error.message}`);
+      return;
+    }
+
+    setCoaches((existingCoaches) =>
+      existingCoaches.map((existingCoach) =>
+        existingCoach.id === coach.id ? { ...existingCoach, active } : existingCoach
+      )
+    );
+    setStatus(`${coach.full_name} marked ${active ? "active" : "inactive"}.`);
+    await loadData(session);
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const client = supabase;
@@ -1192,6 +1223,7 @@ export default function Page() {
               </form>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Coach Availability</h2>
+                <p className="mt-1 text-xs font-black uppercase tracking-wide text-white/45">Counting active coaches only</p>
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <div className="rounded-lg border border-green-500/25 bg-green-500/10 px-3 py-2">
                     <div className="text-lg font-black text-green-300">{availabilitySummary.attending}</div>
@@ -1475,14 +1507,27 @@ export default function Page() {
                     const displayPositionGroup = coach.position_group ?? coachProfile?.position_group ?? "Position Group Needed";
 
                     return (
-                      <div key={coach.id} className="flex min-h-16 items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3">
+                      <div key={coach.id} className={`flex min-h-16 flex-col gap-3 rounded-lg px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${coach.active ? "bg-graphite/70" : "border border-white/10 bg-black/25 opacity-70"}`}>
                         <div className="min-w-0">
                           <div className="font-black">{coach.full_name}</div>
                           <div className="text-sm text-white/50">{coach.role} - {displayPositionGroup} - {coach.email}</div>
                         </div>
-                        <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${isActiveAccount ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
-                          {accountStatus}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.active ? "bg-green-500/10 text-green-300 ring-green-400/25" : "bg-white/10 text-white/55 ring-white/15"}`}>
+                            {coach.active ? "Active Coach" : "Inactive"}
+                          </span>
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${isActiveAccount ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
+                            {accountStatus}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateCoachActive(coach, !coach.active)}
+                            disabled={!isAdmin || coach.id === currentCoach?.id}
+                            className="min-h-9 rounded-lg border border-line px-3 text-xs font-black text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Mark {coach.active ? "Inactive" : "Active"}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
