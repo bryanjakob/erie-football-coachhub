@@ -541,11 +541,24 @@ export default function Page() {
   const needsProfile = Boolean(session && !currentProfile);
 
   const eventAttendanceDetails = useCallback((eventId: string) => {
+    const formatCoachName = (name: string, coach?: CoachAccount | null) => {
+      const suffix = coach?.position_group || coach?.role;
+      return suffix ? `${name} - ${suffix}` : name;
+    };
+
+    const coachForRsvp = (record: RsvpRecord) => {
+      const responseName = normalizeEmail(record.coach_name);
+      return coaches.find((coach) => coach.auth_user_id === record.user_id) ??
+        coaches.find((coach) => normalizeEmail(coach.full_name) === responseName) ??
+        null;
+    };
+
     const uniqueNames = (records: RsvpRecord[]) => {
       const names = new Map<string, string>();
       records.forEach((record) => {
+        const coach = coachForRsvp(record);
         const name = record.coach_name?.trim() || "Coach";
-        names.set(record.user_id || normalizeEmail(name), name);
+        names.set(record.user_id || normalizeEmail(name), formatCoachName(name, coach));
       });
       return Array.from(names.values()).sort((a, b) => a.localeCompare(b));
     };
@@ -562,14 +575,14 @@ export default function Page() {
         if (coachUserId && respondedUserIds.has(coachUserId)) return false;
         return !respondedNames.has(normalizeEmail(coach.full_name));
       })
-      .map((coach) => coach.full_name)
+      .map((coach) => formatCoachName(coach.full_name, coach))
       .sort((a, b) => a.localeCompare(b));
 
     return {
       attending,
       notAttending,
       noResponse,
-      totalCoaches: activeCoaches.length
+      totalCoaches: attending.length + notAttending.length + noResponse.length
     };
   }, [coaches, profiles, rsvps, session]);
 
@@ -974,6 +987,20 @@ export default function Page() {
   const coachRole = coachRoleLabel(currentCoach);
   const currentCoachStatus = coachAccountStatus(currentCoach, profiles, session);
   const schedulePreviewRows = detectedScheduleEvents.length ? detectedScheduleEvents : summerWeekOneSchedule;
+  const availabilitySummary = useMemo(() => {
+    return events.reduce(
+      (summary, event) => {
+        const attendance = eventAttendanceDetails(event.id);
+        return {
+          attending: summary.attending + attendance.attending.length,
+          notAttending: summary.notAttending + attendance.notAttending.length,
+          noResponse: summary.noResponse + attendance.noResponse.length,
+          totalCoaches: summary.totalCoaches + attendance.totalCoaches
+        };
+      },
+      { attending: 0, notAttending: 0, noResponse: 0, totalCoaches: 0 }
+    );
+  }, [eventAttendanceDetails, events]);
 
   return (
     <main className="field-markings min-h-screen pb-24 lg:pb-6">
@@ -1123,8 +1150,26 @@ export default function Page() {
                 </div>
               </form>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
-                <h2 className="text-xl font-black">Live Attendance Board</h2>
-                <div className="mt-4 space-y-2">
+                <h2 className="text-xl font-black">Coach Availability</h2>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="rounded-lg border border-green-500/25 bg-green-500/10 px-3 py-2">
+                    <div className="text-lg font-black text-green-300">{availabilitySummary.attending}</div>
+                    <div className="text-[11px] font-black uppercase tracking-wide text-green-200/70">Attending</div>
+                  </div>
+                  <div className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2">
+                    <div className="text-lg font-black text-red-200">{availabilitySummary.notAttending}</div>
+                    <div className="text-[11px] font-black uppercase tracking-wide text-red-100/70">Not Attending</div>
+                  </div>
+                  <div className="rounded-lg border border-white/15 bg-white/5 px-3 py-2">
+                    <div className="text-lg font-black text-white/75">{availabilitySummary.noResponse}</div>
+                    <div className="text-[11px] font-black uppercase tracking-wide text-white/45">No Response</div>
+                  </div>
+                  <div className="rounded-lg border border-line bg-graphite/70 px-3 py-2">
+                    <div className="text-lg font-black text-white">{availabilitySummary.totalCoaches}</div>
+                    <div className="text-[11px] font-black uppercase tracking-wide text-white/45">Total Coaches</div>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-3">
                   {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
                   {rsvpError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{rsvpError}</p>}
                   {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
@@ -1133,7 +1178,7 @@ export default function Page() {
 
                     return (
                       <div key={event.id} className="rounded-lg border border-line bg-graphite/65 p-3">
-                        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-start">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="font-black">{event.title}</h3>
@@ -1148,27 +1193,30 @@ export default function Page() {
                             ))}
                           </div>
                         </div>
-                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                          <Metric label="Attending" value={`${attendance.attending.length}`} tone="text-orange" />
-                          <Metric label="Not Attending" value={`${attendance.notAttending.length}`} tone="text-red-200" />
-                          <Metric label="No Response" value={`${attendance.noResponse.length}`} tone={attendance.noResponse.length ? "text-white" : "text-orange"} />
-                          <Metric label="Total Coaches" value={`${attendance.totalCoaches}`} />
-                        </div>
                         <div className="mt-3 grid gap-2 md:grid-cols-3">
                           {[
-                            { label: "Attending", names: attendance.attending, tone: "text-orange" },
-                            { label: "Not Attending", names: attendance.notAttending, tone: "text-red-200" },
-                            { label: "No Response", names: attendance.noResponse, tone: "text-white/70" }
+                            { label: "Attending", names: attendance.attending, accent: "border-green-500/30 bg-green-500/10", tone: "text-green-300" },
+                            { label: "Not Attending", names: attendance.notAttending, accent: "border-red-400/30 bg-red-500/10", tone: "text-red-200" },
+                            { label: "No Response", names: attendance.noResponse, accent: "border-white/15 bg-white/5", tone: "text-white/60" }
                           ].map((group) => (
-                            <div key={group.label} className="rounded-lg border border-line bg-black/20 p-3">
-                              <div className={`text-xs font-black uppercase tracking-wide ${group.tone}`}>{group.label}</div>
-                              <div className="mt-2 space-y-1">
+                            <div key={group.label} className={`rounded-lg border px-3 py-2 ${group.accent}`}>
+                              <div className={`flex items-center justify-between gap-2 text-xs font-black uppercase tracking-wide ${group.tone}`}>
+                                <span>{group.label}</span>
+                                <span>{group.names.length}</span>
+                              </div>
+                              <div className="mt-1.5 space-y-0.5">
                                 {group.names.length ? group.names.map((name) => (
                                   <div key={name} className="truncate text-sm font-bold text-white/75">{name}</div>
                                 )) : <div className="text-sm text-white/35">None</div>}
                               </div>
                             </div>
                           ))}
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-1.5 text-center text-[11px] font-black uppercase tracking-wide sm:grid-cols-4">
+                          <div className="rounded-md bg-green-500/10 px-2 py-1 text-green-300">Attending {attendance.attending.length}</div>
+                          <div className="rounded-md bg-red-500/10 px-2 py-1 text-red-200">Not Attending {attendance.notAttending.length}</div>
+                          <div className="rounded-md bg-white/5 px-2 py-1 text-white/55">No Response {attendance.noResponse.length}</div>
+                          <div className="rounded-md bg-black/20 px-2 py-1 text-white/65">Total {attendance.totalCoaches}</div>
                         </div>
                       </div>
                     );
