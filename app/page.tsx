@@ -43,6 +43,8 @@ type ScheduleImportEvent = {
   date: string;
 };
 
+type CalendarView = "Month" | "Week" | "Agenda";
+
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
@@ -171,6 +173,57 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+function formatEventTime(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function dateKey(value: Date | string) {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function startOfWeek(date: Date) {
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  return addDays(date, diff);
+}
+
+function calendarMonthDays(monthDate: Date) {
+  const firstOfMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+  const gridStart = startOfWeek(firstOfMonth);
+  return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
+}
+
+function eventKind(event: StaffEventRecord) {
+  const text = `${event.title} ${event.description ?? ""}`.toLowerCase();
+  if (text.includes("staff meeting") || text.includes("meeting")) return "Staff Meeting";
+  if (text.includes("camp")) return "Camp";
+  if (text.includes("practice") || text.includes("team pass")) return "Practice";
+  return "Workout";
+}
+
+function eventColorClass(event: StaffEventRecord) {
+  const kind = eventKind(event);
+  if (kind === "Workout") return "border-orange/60 bg-orange/15 text-orange";
+  if (kind === "Practice") return "border-white/40 bg-white/15 text-white";
+  if (kind === "Camp") return "border-white/25 bg-white/10 text-white/75";
+  return "border-line bg-graphite/90 text-white/80";
+}
+
+function eventLocation(event: StaffEventRecord) {
+  const locationLine = event.description?.split("\n").find((line) => line.toLowerCase().startsWith("location:"));
+  return locationLine?.replace(/^location:\s*/i, "").trim() || "Not listed";
+}
+
 function eventRsvpRequired(event: StaffEventRecord) {
   return event.rsvp_required ?? true;
 }
@@ -292,6 +345,10 @@ export default function Page() {
   const [scheduleImportMessage, setScheduleImportMessage] = useState("");
   const [detectedScheduleEvents, setDetectedScheduleEvents] = useState<ScheduleImportEvent[]>([]);
   const [insertedScheduleRows, setInsertedScheduleRows] = useState<StaffEventRecord[]>([]);
+  const [calendarView, setCalendarView] = useState<CalendarView>("Month");
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date()));
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
@@ -844,6 +901,23 @@ export default function Page() {
     [messages, selectedChannel]
   );
 
+  const eventsByDate = useMemo(() => {
+    return events.reduce<Record<string, StaffEventRecord[]>>((groupedEvents, event) => {
+      const key = dateKey(event.date);
+      groupedEvents[key] = [...(groupedEvents[key] ?? []), event];
+      groupedEvents[key].sort((firstEvent, secondEvent) => new Date(firstEvent.date).getTime() - new Date(secondEvent.date).getTime());
+      return groupedEvents;
+    }, {});
+  }, [events]);
+
+  const monthDays = useMemo(() => calendarMonthDays(calendarMonth), [calendarMonth]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(new Date(selectedDateKey)), index)), [selectedDateKey]);
+  const selectedDateEvents = eventsByDate[selectedDateKey] ?? [];
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.id === selectedEventId) ?? selectedDateEvents[0] ?? upcomingEvents[0] ?? events[0] ?? null,
+    [events, selectedDateEvents, selectedEventId, upcomingEvents]
+  );
+
   const teamName = "Erie Football";
   const nextEvent = upcomingEvents[0];
   const totalYes = rsvps.filter((rsvp) => rsvp.response === "Yes").length;
@@ -1028,33 +1102,134 @@ export default function Page() {
           )}
 
           {section === "Calendar" && (
-            <section className="rounded-lg border border-line bg-charcoal/90 p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-orange">Schedule Visibility</p>
-                  <h2 className="mt-1 text-xl font-black">Imported Events</h2>
+            <div className="grid gap-4 xl:grid-cols-[1fr_340px]">
+              <section className="rounded-lg border border-line bg-charcoal/90 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-orange">Erie Football</p>
+                    <h2 className="mt-1 text-xl font-black">Staff Calendar</h2>
+                    <p className="mt-1 text-sm text-white/50">
+                      {new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(calendarMonth)}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 rounded-lg border border-line bg-graphite/80 p-1 text-sm font-bold">
+                    {(["Month", "Week", "Agenda"] as CalendarView[]).map((view) => (
+                      <button key={view} type="button" onClick={() => setCalendarView(view)} className={`rounded-md px-3 py-2 ${calendarView === view ? "bg-orange text-ink" : "text-white/70"}`}>
+                        {view === "Agenda" ? "Mobile" : view}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <span className="rounded-full bg-orange/15 px-3 py-1 text-xs font-black text-orange ring-1 ring-orange/30">{events.length} total</span>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {events.length ? events.map((event) => (
-                  <article key={event.id} className="rounded-lg border border-line bg-graphite/70 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="font-black">{event.title}</h3>
-                        <p className="mt-1 text-sm font-bold text-white/55">{formatDateTime(event.date)}</p>
-                      </div>
-                      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ring-1 ${eventRsvpRequired(event) ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
-                        RSVP {eventRsvpRequired(event) ? "Required" : "Optional"}
-                      </span>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} className="min-h-10 rounded-lg border border-line px-3 text-sm font-black text-white/80">Prev</button>
+                  <div className="flex flex-wrap justify-center gap-2 text-xs font-black">
+                    {["Workout", "Practice", "Camp", "Staff Meeting"].map((kind) => (
+                      <span key={kind} className={`rounded-full border px-2 py-1 ${kind === "Workout" ? "border-orange/60 bg-orange/15 text-orange" : kind === "Practice" ? "border-white/40 bg-white/15 text-white" : kind === "Camp" ? "border-white/20 bg-white/10 text-white/70" : "border-line bg-graphite/90 text-white/75"}`}>{kind}</span>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="min-h-10 rounded-lg border border-line px-3 text-sm font-black text-white/80">Next</button>
+                </div>
+
+                {calendarView === "Month" && (
+                  <div className="mt-4">
+                    <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-black uppercase tracking-wide text-white/45">
+                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => <div key={day}>{day}</div>)}
                     </div>
-                    {event.description && <p className="mt-3 whitespace-pre-line text-sm text-white/70">{event.description}</p>}
-                  </article>
-                )) : (
-                  <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/70">No events have been imported or created yet.</p>
+                    <div className="mt-2 grid grid-cols-7 gap-1">
+                      {monthDays.map((day) => {
+                        const key = dateKey(day);
+                        const dayEvents = eventsByDate[key] ?? [];
+                        const inMonth = day.getMonth() === calendarMonth.getMonth();
+                        return (
+                          <button key={key} type="button" onClick={() => { setSelectedDateKey(key); setSelectedEventId(dayEvents[0]?.id ?? null); }} className={`min-h-24 rounded-lg border p-2 text-left transition ${selectedDateKey === key ? "border-orange bg-orange/10" : "border-line bg-graphite/50"} ${inMonth ? "text-white" : "text-white/30"}`}>
+                            <span className="text-xs font-black">{day.getDate()}</span>
+                            <div className="mt-2 space-y-1">
+                              {dayEvents.slice(0, 2).map((event) => (
+                                <div key={event.id} onClick={(clickEvent) => { clickEvent.stopPropagation(); setSelectedDateKey(key); setSelectedEventId(event.id); }} className={`truncate rounded border px-1.5 py-1 text-[10px] font-black ${eventColorClass(event)}`}>{event.title}</div>
+                              ))}
+                              {dayEvents.length > 2 && <div className="text-[10px] font-bold text-white/50">+{dayEvents.length - 2} more</div>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
-              </div>
-            </section>
+
+                {calendarView === "Week" && (
+                  <div className="mt-4 grid gap-2 md:grid-cols-7">
+                    {weekDays.map((day) => {
+                      const key = dateKey(day);
+                      const dayEvents = eventsByDate[key] ?? [];
+                      return (
+                        <button key={key} type="button" onClick={() => { setSelectedDateKey(key); setSelectedEventId(dayEvents[0]?.id ?? null); }} className={`min-h-36 rounded-lg border p-3 text-left ${selectedDateKey === key ? "border-orange bg-orange/10" : "border-line bg-graphite/60"}`}>
+                          <div className="text-xs font-black uppercase text-white/50">{new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(day)}</div>
+                          <div className="mt-1 text-lg font-black">{day.getDate()}</div>
+                          <div className="mt-3 space-y-2">
+                            {dayEvents.length ? dayEvents.map((event) => (
+                              <div key={event.id} onClick={(clickEvent) => { clickEvent.stopPropagation(); setSelectedDateKey(key); setSelectedEventId(event.id); }} className={`rounded border p-2 text-xs font-black ${eventColorClass(event)}`}>
+                                <div>{formatEventTime(event.date)}</div>
+                                <div className="mt-1 line-clamp-2">{event.title}</div>
+                              </div>
+                            )) : <div className="text-xs text-white/40">No events</div>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {calendarView === "Agenda" && (
+                  <div className="mt-4 space-y-3">
+                    {events.length ? events.map((event) => (
+                      <button key={event.id} type="button" onClick={() => { setSelectedDateKey(dateKey(event.date)); setSelectedEventId(event.id); setCalendarMonth(new Date(event.date)); }} className="w-full rounded-lg border border-line bg-graphite/70 p-4 text-left">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-black">{event.title}</h3>
+                            <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
+                          </div>
+                          <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${eventColorClass(event)}`}>{eventKind(event)}</span>
+                        </div>
+                      </button>
+                    )) : <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/60">No events found in public.events.</p>}
+                  </div>
+                )}
+              </section>
+              <section className="space-y-4">
+                <div className="rounded-lg border border-line bg-charcoal/90 p-4">
+                  <h2 className="text-xl font-black">Upcoming Events</h2>
+                  <div className="mt-3 space-y-2">
+                    {events.length ? events.slice(0, 4).map((event) => (
+                      <button key={event.id} type="button" onClick={() => { setSelectedDateKey(dateKey(event.date)); setSelectedEventId(event.id); setCalendarMonth(new Date(event.date)); }} className="w-full rounded-lg bg-graphite/70 p-3 text-left">
+                        <div className="text-sm font-black">{event.title}</div>
+                        <div className="mt-1 text-xs font-bold text-white/50">{formatDateTime(event.date)}</div>
+                      </button>
+                    )) : <p className="rounded-lg bg-graphite/70 p-3 text-sm text-white/60">No events found.</p>}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-line bg-charcoal/90 p-4">
+                  <h2 className="text-xl font-black">Event Details</h2>
+                  {selectedEvent ? (
+                    <div className="mt-3">
+                      <span className={`rounded-full border px-2 py-1 text-[11px] font-black ${eventColorClass(selectedEvent)}`}>{eventKind(selectedEvent)}</span>
+                      <h3 className="mt-3 text-lg font-black">{selectedEvent.title}</h3>
+                      <p className="mt-1 text-sm text-white/60">{formatDateTime(selectedEvent.date)}</p>
+                      <p className="mt-2 text-sm font-bold text-white/70">Location: {eventLocation(selectedEvent)}</p>
+                      {selectedEvent.description && <p className="mt-3 whitespace-pre-line text-sm text-white/70">{selectedEvent.description}</p>}
+                      <div className="mt-3 flex items-center justify-between rounded-lg bg-graphite/70 px-3 py-2 text-sm">
+                        <span className="font-bold text-white/70">Your RSVP</span>
+                        <RsvpSelection response={myRsvp(selectedEvent.id)} />
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Metric label="Yes" value={`${eventRsvpSummary(selectedEvent.id).Yes}`} tone="text-orange" />
+                        <Metric label="No" value={`${eventRsvpSummary(selectedEvent.id).No}`} tone="text-red-200" />
+                      </div>
+                      <button type="button" onClick={() => setSection("Attendance")} className="mt-3 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink">Open RSVP Page</button>
+                    </div>
+                  ) : <p className="mt-3 text-sm text-white/60">Select a date or event to view details.</p>}
+                </div>
+              </section>
+            </div>
           )}
 
           {section === "Installs" && (
