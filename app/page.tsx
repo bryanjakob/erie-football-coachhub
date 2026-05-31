@@ -224,18 +224,12 @@ function eventLocation(event: StaffEventRecord) {
   return locationLine?.replace(/^location:\s*/i, "").trim() || "Not listed";
 }
 
-function eventRsvpRequired(event: StaffEventRecord) {
-  return event.rsvp_required ?? true;
+function coachRoleLabel(coach: CoachAccount | null) {
+  return coach?.role ?? "Coach";
 }
 
-function initials(name?: string | null, email?: string | null) {
-  const source = name || email || "Coach";
-  return source
-    .split(/[ @.]/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
+function eventRsvpRequired(event: StaffEventRecord) {
+  return event.rsvp_required ?? true;
 }
 
 function LoginPanel({
@@ -286,7 +280,6 @@ function LoginPanel({
   return (
     <form onSubmit={mode === "signin" ? handleLogin : handleSignUp} className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
       <div className="flex items-center gap-3">
-        <ErieLogo className="h-14 w-32 shrink-0" />
         <div>
           <h2 className="text-lg font-black">{mode === "signin" ? "Coach Login" : "Create Coach Account"}</h2>
           <p className="text-sm text-white/60">Supabase Auth keeps coaches signed in on mobile after login.</p>
@@ -523,12 +516,6 @@ export default function Page() {
   const myRsvp = useCallback((eventId: string): RSVPStatus | null => {
     return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.user_id === session?.user.id)?.response ?? null;
   }, [rsvps, session?.user.id]);
-
-  const attendancePercent = useMemo(() => {
-    const totalSlots = events.length * Math.max(coaches.length, 1);
-    if (!totalSlots) return 0;
-    return Math.round((rsvps.filter((rsvp) => rsvp.response === "Yes").length / totalSlots) * 100);
-  }, [coaches.length, events.length, rsvps]);
 
   async function login(email: string, password: string) {
     const client = supabase;
@@ -920,9 +907,9 @@ export default function Page() {
   const teamName = "Erie Football";
   const pageTitle = section === "Home" ? "Staff Dashboard" : section;
   const nextEvent = upcomingEvents[0];
-  const totalYes = rsvps.filter((rsvp) => rsvp.response === "Yes").length;
-  const totalNo = rsvps.filter((rsvp) => rsvp.response === "No").length;
-  const nextSummary = nextEvent ? eventRsvpSummary(nextEvent.id) : { Yes: 0, No: 0 };
+  const myCompletedRsvps = events.filter((event) => Boolean(myRsvp(event.id))).length;
+  const myPendingRsvps = Math.max(events.length - myCompletedRsvps, 0);
+  const coachRole = coachRoleLabel(currentCoach);
   const schedulePreviewRows = detectedScheduleEvents.length ? detectedScheduleEvents : summerWeekOneSchedule;
 
   return (
@@ -945,7 +932,7 @@ export default function Page() {
             ))}
           </nav>
           <div className="mt-auto rounded-lg border border-line bg-graphite/70 p-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-white/40">{currentCoach?.role ?? "Coach Profile Needed"}</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-white/40">{coachRole}</p>
             <p className="mt-1 font-black">{coachName}</p>
             <p className="text-sm text-white/50">{teamName}</p>
           </div>
@@ -953,17 +940,7 @@ export default function Page() {
 
         <div className="min-w-0 flex-1">
           <header className="mb-4 rounded-lg border border-line bg-black/85 p-4 backdrop-blur">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="min-w-0">
-                  <h1 className="truncate text-2xl font-black sm:text-3xl">{pageTitle}</h1>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="grid h-11 w-11 place-items-center rounded-lg border border-line bg-graphite/70" title="Notifications"><Icon name="Bell" /></button>
-                <div className="grid h-11 w-11 place-items-center rounded-lg bg-white text-sm font-black text-ink">{initials(coachName, session?.user.email)}</div>
-              </div>
-            </div>
+            <h1 className="truncate text-2xl font-black sm:text-3xl">{pageTitle}</h1>
             {!isConfigured && <p className="mt-3 rounded-lg border border-orange/30 bg-orange/10 p-3 text-sm font-bold text-orange">Supabase env vars are missing. Add `.env.local` values and restart the app.</p>}
             {loading && <p className="mt-3 rounded-lg bg-white/10 p-3 text-sm text-white/70">Loading persistent staff data...</p>}
             {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
@@ -983,23 +960,36 @@ export default function Page() {
           )}
 
           {section === "Home" && (
-            <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
               <div className="space-y-4">
-                <LoginPanel session={session} status={status} onLogin={login} onSignUp={signUpCoach} onReset={resetPassword} onLogout={logout} />
-                <section className="rounded-lg border border-line bg-charcoal/90 p-4">
+                {session ? (
+                  <section className="rounded-lg border border-line bg-charcoal/90 p-4">
+                    <p className="text-xs font-bold uppercase tracking-wide text-orange">Welcome Back</p>
+                    <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <h2 className="text-2xl font-black">{coachName}</h2>
+                        <p className="mt-1 text-sm font-bold text-white/55">{coachRole} - {teamName}</p>
+                      </div>
+                      <button onClick={logout} className="min-h-10 rounded-lg border border-line px-4 text-sm font-bold text-white/80">Sign Out</button>
+                    </div>
+                  </section>
+                ) : (
+                  <LoginPanel session={session} status={status} onLogin={login} onSignUp={signUpCoach} onReset={resetPassword} onLogout={logout} />
+                )}
+                <section className="rounded-lg border border-orange/30 bg-charcoal/95 p-4 shadow-glow">
                   {nextEvent ? (
                     <>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-bold uppercase tracking-wide text-orange">Next Required RSVP</p>
-                          <h2 className="mt-1 text-2xl font-black">{nextEvent.title}</h2>
-                          <p className="mt-1 text-sm text-white/60">{formatDateTime(nextEvent.date)}</p>
+                          <h2 className="mt-2 text-3xl font-black">{nextEvent.title}</h2>
+                          <p className="mt-1 text-base font-bold text-white/65">{formatDateTime(nextEvent.date)}</p>
                         </div>
                         <RsvpSelection response={myRsvp(nextEvent.id)} />
                       </div>
-                      <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="mt-5 grid grid-cols-2 gap-2">
                         {(["Yes", "No"] as RSVPStatus[]).map((response) => (
-                          <button key={response} onClick={() => respondToEvent(nextEvent.id, response)} className={`min-h-14 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                          <button key={response} onClick={() => respondToEvent(nextEvent.id, response)} className={`min-h-14 rounded-lg text-base font-black ring-1 ${statusStyles[response]}`}>{response}</button>
                         ))}
                       </div>
                     </>
@@ -1020,10 +1010,9 @@ export default function Page() {
                 <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                   <h2 className="text-lg font-black">Attendance Summary</h2>
                   <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Metric label="Trend" value={`${attendancePercent}%`} tone="text-orange" />
-                    <Metric label="Yes" value={`${totalYes || nextSummary.Yes}`} tone="text-orange" />
-                    <Metric label="No" value={`${totalNo || nextSummary.No}`} tone="text-red-200" />
-                    <Metric label="Events" value={`${events.length}`} />
+                    <Metric label="My RSVPs Completed" value={`${myCompletedRsvps}`} tone="text-orange" />
+                    <Metric label="Pending RSVPs" value={`${myPendingRsvps}`} tone={myPendingRsvps ? "text-red-200" : "text-orange"} />
+                    <Metric label="Total Events" value={`${events.length}`} />
                   </div>
                 </section>
                 <section className="rounded-lg border border-line bg-charcoal/90 p-4">
@@ -1067,30 +1056,26 @@ export default function Page() {
               </form>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Live RSVP Board</h2>
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 space-y-2">
                   {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
                   {rsvpError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{rsvpError}</p>}
                   {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
                   {events.map((event) => (
-                    <div key={event.id} className="rounded-lg bg-graphite/70 p-3">
-                      <div className="flex items-start justify-between gap-3">
+                    <div key={event.id} className="rounded-lg border border-line bg-graphite/65 p-3">
+                      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
                         <div className="min-w-0">
-                          <h3 className="font-black">{event.title}</h3>
-                          <p className="mt-1 text-sm text-white/60">{formatDateTime(event.date)}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-black">{event.title}</h3>
+                            <RsvpSelection response={myRsvp(event.id)} />
+                          </div>
+                          <p className="mt-1 text-sm font-bold text-white/60">{formatDateTime(event.date)}</p>
+                          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/40">Location: {eventLocation(event)}</p>
                         </div>
-                        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ring-1 ${eventRsvpRequired(event) ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
-                          RSVP {eventRsvpRequired(event) ? "Required" : "Optional"}
-                        </span>
-                      </div>
-                      {event.description && <p className="mt-3 whitespace-pre-line text-sm text-white/75">{event.description}</p>}
-                      <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-graphite/70 px-3 py-2 text-sm">
-                        <span className="font-bold text-white/70">Your response</span>
-                        {myRsvp(event.id) ? <StatusPill status={myRsvp(event.id) as RSVPStatus} /> : <span className="font-bold text-white/45">Not selected</span>}
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        {(["Yes", "No"] as RSVPStatus[]).map((response) => (
-                          <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-11 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
-                        ))}
+                        <div className="grid grid-cols-2 gap-2 sm:w-40">
+                          {(["Yes", "No"] as RSVPStatus[]).map((response) => (
+                            <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-10 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ))}
