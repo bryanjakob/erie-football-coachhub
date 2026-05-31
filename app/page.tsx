@@ -51,6 +51,11 @@ type SyncCoachesResult = {
   createdProfilesCount: number;
   createdCoachRecordsCount?: number;
   updatedCoachRecordsCount?: number;
+  failedCoachRecordsCount?: number;
+  coachFailures?: Array<{
+    email: string;
+    reason: string;
+  }>;
   existingCoachesCount: number;
   profilesCount: number;
   coachesCount: number;
@@ -1893,21 +1898,24 @@ export default function Page() {
                     )}
                   </div>
                   {coachSyncResult && (
-                    <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white/65">
-                      <div className="font-black text-white">Last Sync Result</div>
-                      <div>Synced coaches: {coachSyncResult.syncedCoachesCount}</div>
-                      <div>Coach records created: {coachSyncResult.createdCoachRecordsCount ?? 0}</div>
-                      <div>Coach records updated: {coachSyncResult.updatedCoachRecordsCount ?? 0}</div>
-                      <div>Profiles created from Auth users: {coachSyncResult.createdProfilesCount ?? 0}</div>
-                      <div>Existing coaches before sync: {coachSyncResult.existingCoachesCount}</div>
-                      <div>Profiles read: {coachSyncResult.profilesCount}</div>
-                      <div>Coach accounts after sync: {coachSyncResult.coachesCount}</div>
-                      <div>Auth users read: {coachSyncResult.authUsersCount}</div>
-                      <div>Missing after sync: {coachSyncResult.missingProfilesAfterSync.length}</div>
-                      {coachSyncResult.errors.length > 0 && (
-                        <div className="mt-2 rounded-lg border border-red-400/25 bg-red-500/10 p-2 text-red-100">
-                          <div className="font-black">Errors</div>
-                          {coachSyncResult.errors.map((error) => <div key={error}>{error}</div>)}
+                    <div className="mt-3 rounded-lg border border-orange/25 bg-black/20 p-3 text-xs leading-5 text-white/65">
+                      <div className="font-black text-white">Sync Result</div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-lg border border-white/10 bg-black/20 p-2">Profiles found: {coachSyncResult.profilesCount}</div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 p-2">Coaches found: {coachSyncResult.existingCoachesCount}</div>
+                        <div className="rounded-lg border border-green-400/20 bg-green-500/10 p-2 text-green-200">Coaches created: {coachSyncResult.createdCoachRecordsCount ?? 0}</div>
+                        <div className="rounded-lg border border-orange/20 bg-orange/10 p-2 text-orange">Coaches updated: {coachSyncResult.updatedCoachRecordsCount ?? 0}</div>
+                        <div className="rounded-lg border border-red-400/25 bg-red-500/10 p-2 text-red-100">Coaches failed: {coachSyncResult.failedCoachRecordsCount ?? coachSyncResult.coachFailures?.length ?? 0}</div>
+                      </div>
+                      {(coachSyncResult.coachFailures?.length ?? 0) > 0 && (
+                        <div className="mt-3 rounded-lg border border-red-400/25 bg-red-500/10 p-3 text-red-100">
+                          <div className="font-black">Failed Coaches</div>
+                          {coachSyncResult.coachFailures?.map((failure) => (
+                            <div key={`${failure.email}-${failure.reason}`} className="mt-2 rounded-md bg-black/25 p-2">
+                              <div>Email: {failure.email}</div>
+                              <div>Reason: {failure.reason}</div>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

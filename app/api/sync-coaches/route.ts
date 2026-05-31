@@ -13,6 +13,11 @@ type AuthUserSummary = {
   positionGroup: PositionGroup | null;
 };
 
+type CoachSyncFailure = {
+  email: string;
+  reason: string;
+};
+
 function normalizeEmail(email?: string | null) {
   return email?.trim().toLowerCase() ?? "";
 }
@@ -107,6 +112,7 @@ export async function POST(request: Request) {
   let createdCoachRecordsCount = 0;
   let updatedCoachRecordsCount = 0;
   let syncedCoachesCount = 0;
+  const coachFailures: CoachSyncFailure[] = [];
 
   for (const authUser of authUsers) {
     if (profiles.some((profile) => profile.id === authUser.id)) continue;
@@ -137,42 +143,54 @@ export async function POST(request: Request) {
     profiles = [...profiles, profile as CoachProfile];
   }
 
-  const coachUpsertRows = [];
   for (const profile of profiles) {
     const email = normalizeEmail(profile.email) || authEmailById.get(profile.id) || "";
     const fullName = profile.full_name?.trim();
     const positionGroup = coachPositionGroup(profile.position_group);
 
     if (!email || !fullName) {
+      const reason = "ERROR: missing email or full name";
       errors.push(`Skipped ${fullName || profile.id}: missing email or full name.`);
+      coachFailures.push({ email: email || profile.id, reason });
       continue;
     }
 
-    coachUpsertRows.push({
-      auth_user_id: profile.id,
-      email,
-      full_name: fullName,
-      position_group: positionGroup,
-      role: "Coach",
-      active: true
-    });
-  }
-
-  if (coachUpsertRows.length > 0) {
-    const { data: syncedCoaches, error } = await adminClient
+    const wasExistingBeforeSync = existingCoachKeys.has(email) || existingCoachKeys.has(profile.id);
+    const { data: syncedCoach, error } = await adminClient
       .from("coaches")
-      .upsert(coachUpsertRows, { onConflict: "email" })
-      .select("*");
+      .upsert(
+        {
+          auth_user_id: profile.id,
+          email,
+          full_name: fullName,
+          position_group: positionGroup,
+          role: "Coach",
+          active: true
+        },
+        { onConflict: "email" }
+      )
+      .select("*")
+      .single();
 
     if (error) {
-      errors.push(`Coach upsert failed: ${error.message}`);
-    } else {
-      const syncedRows = (syncedCoaches ?? []) as CoachAccount[];
-      syncedCoachesCount = syncedRows.length;
-      createdCoachRecordsCount = coachUpsertRows.filter((row) => !existingCoachKeys.has(row.email) && !existingCoachKeys.has(row.auth_user_id)).length;
-      updatedCoachRecordsCount = syncedRows.length - createdCoachRecordsCount;
-      coaches = syncedRows;
+      const reason = `ERROR: ${error.message}`;
+      errors.push(`${email}: ${error.message}`);
+      coachFailures.push({ email, reason });
+      continue;
     }
+
+    syncedCoachesCount += 1;
+    if (wasExistingBeforeSync) {
+      updatedCoachRecordsCount += 1;
+    } else {
+      createdCoachRecordsCount += 1;
+      existingCoachKeys.add(email);
+      existingCoachKeys.add(profile.id);
+    }
+    coaches = [
+      ...coaches.filter((coach) => coach.id !== (syncedCoach as CoachAccount).id && normalizeEmail(coach.email) !== email),
+      syncedCoach as CoachAccount
+    ];
   }
 
   const refreshedCoachesResult = await adminClient
@@ -203,6 +221,8 @@ export async function POST(request: Request) {
     createdProfilesCount,
     createdCoachRecordsCount,
     updatedCoachRecordsCount,
+    failedCoachRecordsCount: coachFailures.length,
+    coachFailures,
     existingCoachesCount,
     profilesCount: profiles.length,
     coachesCount: coaches.length,
