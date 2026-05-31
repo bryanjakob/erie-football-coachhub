@@ -1484,7 +1484,8 @@ export default function Page() {
           {section === "Admin" && (
             <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
-                <h2 className="text-xl font-black">Coach Accounts</h2>
+                <h2 className="text-xl font-black">Coach Directory Management</h2>
+                <p className="mt-1 text-sm text-white/55">Manually manage active staff status. Coaches are never deactivated automatically.</p>
                 <form onSubmit={inviteCoach} className="mt-4 grid gap-3">
                   <input value={coachForm.fullName} onChange={(event) => setCoachForm({ ...coachForm, fullName: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Full name" required />
                   <input value={coachForm.email} onChange={(event) => setCoachForm({ ...coachForm, email: event.target.value })} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Email" type="email" required />
@@ -1500,6 +1501,12 @@ export default function Page() {
                   <button disabled={!isAdmin} className="min-h-11 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40">Invite Coach</button>
                 </form>
                 <div className="mt-4 space-y-3">
+                  <div className="hidden grid-cols-[1fr_1fr_0.8fr_auto] gap-3 px-3 text-xs font-black uppercase tracking-wide text-white/35 md:grid">
+                    <span>Name</span>
+                    <span>Email</span>
+                    <span>Position Group</span>
+                    <span>Status</span>
+                  </div>
                   {coaches.map((coach) => {
                     const accountStatus = coachAccountStatus(coach, profiles, session);
                     const isActiveAccount = accountStatus === "Active";
@@ -1507,14 +1514,23 @@ export default function Page() {
                     const displayPositionGroup = coach.position_group ?? coachProfile?.position_group ?? "Position Group Needed";
 
                     return (
-                      <div key={coach.id} className={`flex min-h-16 flex-col gap-3 rounded-lg px-3 py-3 sm:flex-row sm:items-center sm:justify-between ${coach.active ? "bg-graphite/70" : "border border-white/10 bg-black/25 opacity-70"}`}>
+                      <div key={coach.id} className={`grid gap-3 rounded-lg px-3 py-3 md:grid-cols-[1fr_1fr_0.8fr_auto] md:items-center ${coach.active ? "bg-graphite/70" : "border border-white/10 bg-black/25 opacity-70"}`}>
                         <div className="min-w-0">
+                          <div className="text-[11px] font-black uppercase tracking-wide text-white/35 md:hidden">Name</div>
                           <div className="font-black">{coach.full_name}</div>
-                          <div className="text-sm text-white/50">{coach.role} - {displayPositionGroup} - {coach.email}</div>
+                          <div className="text-xs font-bold text-white/45">{coach.role}</div>
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-black uppercase tracking-wide text-white/35 md:hidden">Email</div>
+                          <div className="truncate text-sm font-bold text-white/65">{coach.email}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-black uppercase tracking-wide text-white/35 md:hidden">Position Group</div>
+                          <div className="text-sm font-black text-orange">{displayPositionGroup}</div>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${coach.active ? "bg-green-500/10 text-green-300 ring-green-400/25" : "bg-white/10 text-white/55 ring-white/15"}`}>
-                            {coach.active ? "Active Coach" : "Inactive"}
+                            {coach.active ? "Active" : "Inactive"}
                           </span>
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${isActiveAccount ? "bg-orange/15 text-orange ring-orange/30" : "bg-white/10 text-white/60 ring-white/15"}`}>
                             {accountStatus}
@@ -1522,7 +1538,7 @@ export default function Page() {
                           <button
                             type="button"
                             onClick={() => updateCoachActive(coach, !coach.active)}
-                            disabled={!isAdmin || coach.id === currentCoach?.id}
+                            disabled={!isAdmin}
                             className="min-h-9 rounded-lg border border-line px-3 text-xs font-black text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Mark {coach.active ? "Inactive" : "Active"}
