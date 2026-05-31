@@ -95,7 +95,11 @@ export async function POST(request: Request) {
   }));
   const authEmailById = new Map(authUsers.map((user) => [user.id, normalizeEmail(user.email)]));
   const existingCoachesCount = coaches.length;
+  const existingCoachKeys = new Set(
+    coaches.flatMap((coach) => [normalizeEmail(coach.email), coach.auth_user_id ?? ""]).filter(Boolean)
+  );
   let createdProfilesCount = 0;
+  let createdCoachRecordsCount = 0;
   let syncedCoachesCount = 0;
 
   for (const authUser of authUsers) {
@@ -132,8 +136,8 @@ export async function POST(request: Request) {
     const fullName = profile.full_name?.trim();
     const positionGroup = validPositionGroup(profile.position_group);
 
-    if (!email || !fullName || !positionGroup) {
-      errors.push(`Skipped ${fullName || profile.id}: missing email, full name, or valid position group.`);
+    if (!email || !fullName) {
+      errors.push(`Skipped ${fullName || profile.id}: missing email or full name.`);
       continue;
     }
 
@@ -166,6 +170,7 @@ export async function POST(request: Request) {
       continue;
     }
 
+    const wasExistingBeforeSync = existingCoachKeys.has(email) || existingCoachKeys.has(profile.id);
     const { data: insertedCoach, error } = await adminClient
       .from("coaches")
       .insert({
@@ -185,7 +190,19 @@ export async function POST(request: Request) {
     }
 
     syncedCoachesCount += 1;
+    if (!wasExistingBeforeSync) createdCoachRecordsCount += 1;
     coaches = [...coaches, insertedCoach as CoachAccount];
+  }
+
+  const refreshedCoachesResult = await adminClient
+    .from("coaches")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (refreshedCoachesResult.error) {
+    errors.push(`Final coaches refresh failed: ${refreshedCoachesResult.error.message}`);
+  } else {
+    coaches = (refreshedCoachesResult.data ?? []) as CoachAccount[];
   }
 
   const missingProfilesAfterSync = profiles
@@ -203,6 +220,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     syncedCoachesCount,
     createdProfilesCount,
+    createdCoachRecordsCount,
     existingCoachesCount,
     profilesCount: profiles.length,
     coachesCount: coaches.length,

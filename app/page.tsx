@@ -49,6 +49,7 @@ type ScheduleImportEvent = {
 type SyncCoachesResult = {
   syncedCoachesCount: number;
   createdProfilesCount: number;
+  createdCoachRecordsCount?: number;
   existingCoachesCount: number;
   profilesCount: number;
   coachesCount: number;
@@ -1158,7 +1159,7 @@ export default function Page() {
 
       const syncResult = result as SyncCoachesResult;
       setCoachSyncResult(syncResult);
-      setCoachSyncMessage(`Synced ${syncResult.syncedCoachesCount} coach${syncResult.syncedCoachesCount === 1 ? "" : "es"}. Existing before sync: ${syncResult.existingCoachesCount}.`);
+      setCoachSyncMessage(`Created ${syncResult.createdCoachRecordsCount ?? 0} coach record${(syncResult.createdCoachRecordsCount ?? 0) === 1 ? "" : "s"}. Synced ${syncResult.syncedCoachesCount} total.`);
       setCoachDebugResult({
         authUsersCount: syncResult.authUsersCount,
         profilesCount: syncResult.profilesCount,
@@ -1881,6 +1882,7 @@ export default function Page() {
                     <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white/65">
                       <div className="font-black text-white">Last Sync Result</div>
                       <div>Synced coaches: {coachSyncResult.syncedCoachesCount}</div>
+                      <div>Coach records created: {coachSyncResult.createdCoachRecordsCount ?? 0}</div>
                       <div>Profiles created from Auth users: {coachSyncResult.createdProfilesCount ?? 0}</div>
                       <div>Existing coaches before sync: {coachSyncResult.existingCoachesCount}</div>
                       <div>Profiles read: {coachSyncResult.profilesCount}</div>
