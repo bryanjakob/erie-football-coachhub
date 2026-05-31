@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   const email = userResult.user.email.toLowerCase();
 
-  const { error: profileError } = await adminClient
+  const { data: profile, error: profileError } = await adminClient
     .from("profiles")
     .upsert(
       {
@@ -53,7 +53,9 @@ export async function POST(request: Request) {
         position_group: positionGroup
       },
       { onConflict: "id" }
-    );
+    )
+    .select("id,full_name,email,position_group,created_at")
+    .single();
 
   if (profileError) {
     return NextResponse.json({ error: profileError.message }, { status: 500 });
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: coachError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ coach });
+    return NextResponse.json({ coach, profile });
   }
 
   const { data: coach, error: coachError } = await adminClient
@@ -106,5 +108,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: coachError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ coach });
+  return NextResponse.json({ coach, profile });
 }

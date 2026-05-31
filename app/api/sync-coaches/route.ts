@@ -8,6 +8,8 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 type AuthUserSummary = {
   id: string;
   email: string | null;
+  fullName: string | null;
+  positionGroup: PositionGroup | null;
 };
 
 function normalizeEmail(email?: string | null) {
@@ -81,15 +83,49 @@ export async function POST(request: Request) {
     errors.push(`Auth users read failed: ${authUsersResult.error.message}`);
   }
 
-  const profiles = (profilesResult.data ?? []) as CoachProfile[];
+  let profiles = (profilesResult.data ?? []) as CoachProfile[];
   let coaches = (coachesResult.data ?? []) as CoachAccount[];
   const authUsers: AuthUserSummary[] = (authUsersResult.data?.users ?? []).map((user) => ({
     id: user.id,
-    email: user.email ?? null
+    email: user.email ?? null,
+    fullName: typeof user.user_metadata?.full_name === "string"
+      ? user.user_metadata.full_name.trim()
+      : [user.user_metadata?.first_name, user.user_metadata?.last_name].filter((value) => typeof value === "string" && value.trim()).join(" ").trim() || null,
+    positionGroup: validPositionGroup(typeof user.user_metadata?.position_group === "string" ? user.user_metadata.position_group : null)
   }));
   const authEmailById = new Map(authUsers.map((user) => [user.id, normalizeEmail(user.email)]));
   const existingCoachesCount = coaches.length;
+  let createdProfilesCount = 0;
   let syncedCoachesCount = 0;
+
+  for (const authUser of authUsers) {
+    if (profiles.some((profile) => profile.id === authUser.id)) continue;
+
+    const email = normalizeEmail(authUser.email);
+    if (!email || !authUser.fullName || !authUser.positionGroup) continue;
+
+    const { data: profile, error } = await adminClient
+      .from("profiles")
+      .upsert(
+        {
+          id: authUser.id,
+          email,
+          full_name: authUser.fullName,
+          position_group: authUser.positionGroup
+        },
+        { onConflict: "id" }
+      )
+      .select("id,full_name,email,position_group,created_at")
+      .single();
+
+    if (error) {
+      errors.push(`${authUser.fullName}: profile backfill failed: ${error.message}`);
+      continue;
+    }
+
+    createdProfilesCount += 1;
+    profiles = [...profiles, profile as CoachProfile];
+  }
 
   for (const profile of profiles) {
     const email = normalizeEmail(profile.email) || authEmailById.get(profile.id) || "";
@@ -166,10 +202,27 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     syncedCoachesCount,
+    createdProfilesCount,
     existingCoachesCount,
     profilesCount: profiles.length,
     coachesCount: coaches.length,
     authUsersCount: authUsers.length,
+    authUserEmails: authUsers.map((user) => normalizeEmail(user.email)).filter(Boolean).sort(),
+    profileEmails: profiles.map((profile) => ({
+      id: profile.id,
+      full_name: profile.full_name,
+      email: normalizeEmail(profile.email) || authEmailById.get(profile.id) || null,
+      position_group: profile.position_group
+    })),
+    coachEmails: coaches.map((coach) => ({
+      id: coach.id,
+      auth_user_id: coach.auth_user_id,
+      full_name: coach.full_name,
+      email: normalizeEmail(coach.email) || null,
+      role: coach.role,
+      position_group: coach.position_group,
+      active: coach.active
+    })),
     missingProfilesAfterSync,
     errors
   });

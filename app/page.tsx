@@ -48,15 +48,55 @@ type ScheduleImportEvent = {
 
 type SyncCoachesResult = {
   syncedCoachesCount: number;
+  createdProfilesCount?: number;
   existingCoachesCount: number;
   profilesCount: number;
   coachesCount: number;
   authUsersCount: number;
+  authUserEmails?: string[];
+  profileEmails?: Array<{
+    id: string;
+    full_name: string;
+    email: string | null;
+    position_group: string | null;
+  }>;
+  coachEmails?: Array<{
+    id: string;
+    auth_user_id?: string | null;
+    full_name: string;
+    email: string | null;
+    role?: string;
+    position_group: string | null;
+    active?: boolean;
+  }>;
   missingProfilesAfterSync: Array<{
     id: string;
     full_name: string;
     email: string | null;
     position_group: string | null;
+  }>;
+  errors: string[];
+};
+
+type CoachDirectoryDebugResult = {
+  authUsersCount: number;
+  profilesCount: number;
+  coachesCount: number;
+  authUserEmails: string[];
+  profileEmails: Array<{
+    id: string;
+    full_name: string;
+    email: string | null;
+    position_group: string | null;
+  }>;
+  coachEmails: Array<{
+    id: string;
+    auth_user_id: string | null;
+    full_name: string;
+    email: string | null;
+    role: string;
+    position_group: string | null;
+    active: boolean;
   }>;
   errors: string[];
 };
@@ -388,6 +428,9 @@ export default function Page() {
   const [coachSyncing, setCoachSyncing] = useState(false);
   const [coachSyncResult, setCoachSyncResult] = useState<SyncCoachesResult | null>(null);
   const [coachSyncMessage, setCoachSyncMessage] = useState("");
+  const [coachDebugLoading, setCoachDebugLoading] = useState(false);
+  const [coachDebugResult, setCoachDebugResult] = useState<CoachDirectoryDebugResult | null>(null);
+  const [coachDebugMessage, setCoachDebugMessage] = useState("");
   const [calendarView, setCalendarView] = useState<CalendarView>("Month");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateKey(new Date()));
@@ -506,15 +549,15 @@ export default function Page() {
     let resolvedCoachAccount = coachAccount;
     if (profile?.position_group && activeSession.access_token && (!resolvedCoachAccount || !resolvedCoachAccount.auth_user_id)) {
       try {
-        const ensuredCoach = await ensureCoachAccount(profile.full_name, profile.position_group, activeSession.access_token);
-        if (ensuredCoach) {
-          resolvedCoachAccount = ensuredCoach;
+        const ensuredAccount = await ensureCoachAccount(profile.full_name, profile.position_group, activeSession.access_token);
+        if (ensuredAccount.coach) {
+          resolvedCoachAccount = ensuredAccount.coach;
           setCoaches((existingCoaches) => {
             const nextCoaches = [
-              ...existingCoaches.filter((coach) => coach.id !== ensuredCoach.id),
-              ensuredCoach
+              ...existingCoaches.filter((coach) => coach.id !== ensuredAccount.coach?.id),
+              ensuredAccount.coach
             ];
-            return nextCoaches.sort((a, b) => a.created_at.localeCompare(b.created_at));
+            return (nextCoaches.filter(Boolean) as CoachAccount[]).sort((a, b) => a.created_at.localeCompare(b.created_at));
           });
         }
       } catch (error) {
@@ -682,13 +725,16 @@ export default function Page() {
       },
       body: JSON.stringify({ fullName, positionGroup })
     });
-    const result = (await response.json()) as { coach?: CoachAccount; error?: string };
+    const result = (await response.json()) as { coach?: CoachAccount; profile?: CoachProfile; error?: string };
 
     if (!response.ok || result.error) {
       throw new Error(result.error ?? "Coach account save failed.");
     }
 
-    return result.coach ?? null;
+    return {
+      coach: result.coach ?? null,
+      profile: result.profile ?? null
+    };
   }
 
   async function signUpCoach(input: SignUpInput) {
@@ -741,36 +787,22 @@ export default function Page() {
       return;
     }
 
-    const profilePayload = {
-      id: userId,
-      full_name: fullName,
-      email,
-      position_group: positionGroup
-    };
-    const profileResult = await client
-      .from("profiles")
-      .upsert(profilePayload, { onConflict: "id" })
-      .select("id,full_name,email,position_group,created_at")
-      .single();
-
-    if (profileResult.error) {
-      setStatus(`Account created, but profile save failed: ${profileResult.error.message}`);
-      return;
-    }
-
     let coachRecord: CoachAccount | null = null;
+    let profileRecord: CoachProfile | null = null;
     if (activeSession?.access_token) {
       try {
-        coachRecord = await ensureCoachAccount(fullName, positionGroup, activeSession.access_token);
+        const ensuredAccount = await ensureCoachAccount(fullName, positionGroup, activeSession.access_token);
+        coachRecord = ensuredAccount.coach;
+        profileRecord = ensuredAccount.profile;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Coach directory save failed.";
-        setStatus(`Account created, but coach directory save failed: ${message}`);
+        const message = error instanceof Error ? error.message : "Profile and coach directory save failed.";
+        setStatus(`Account created, but profile sync failed: ${message}`);
         return;
       }
     }
 
     setSession(activeSession);
-    setCurrentProfile(profileResult.data as CoachProfile);
+    setCurrentProfile(profileRecord);
     setCurrentCoach(coachRecord);
     setProfileName(fullName);
     setProfilePositionGroup(positionGroup);
@@ -815,35 +847,21 @@ export default function Page() {
       return;
     }
 
-    const payload = {
-      id: user.id,
-      full_name: fullName,
-      email: user.email ?? currentCoach?.email ?? null,
-      position_group: positionGroup
-    };
-    const { data, error } = await client
-      .from("profiles")
-      .upsert(payload, { onConflict: "id" })
-      .select("id,full_name,email,position_group,created_at")
-      .single();
-
-    if (error) {
-      setStatus(`Profile save failed: ${error.message}`);
-      return;
-    }
-
     let coachRecord: CoachAccount | null = null;
+    let profileRecord: CoachProfile | null = null;
     if (session.access_token) {
       try {
-        coachRecord = await ensureCoachAccount(fullName, positionGroup, session.access_token);
+        const ensuredAccount = await ensureCoachAccount(fullName, positionGroup, session.access_token);
+        coachRecord = ensuredAccount.coach;
+        profileRecord = ensuredAccount.profile;
       } catch (ensureError) {
-        const message = ensureError instanceof Error ? ensureError.message : "Coach directory save failed.";
-        setStatus(`Profile saved, but coach directory save failed: ${message}`);
+        const message = ensureError instanceof Error ? ensureError.message : "Profile and coach directory save failed.";
+        setStatus(`Profile save failed: ${message}`);
         return;
       }
     }
 
-    setCurrentProfile(data as CoachProfile);
+    setCurrentProfile(profileRecord);
     if (coachRecord) setCurrentCoach(coachRecord);
     setProfileName(fullName);
     setProfilePositionGroup(positionGroup);
@@ -1090,11 +1108,53 @@ export default function Page() {
       const syncResult = result as SyncCoachesResult;
       setCoachSyncResult(syncResult);
       setCoachSyncMessage(`Synced ${syncResult.syncedCoachesCount} coach${syncResult.syncedCoachesCount === 1 ? "" : "es"}. Existing before sync: ${syncResult.existingCoachesCount}.`);
+      setCoachDebugResult({
+        authUsersCount: syncResult.authUsersCount,
+        profilesCount: syncResult.profilesCount,
+        coachesCount: syncResult.coachesCount,
+        authUserEmails: syncResult.authUserEmails ?? [],
+        profileEmails: syncResult.profileEmails ?? [],
+        coachEmails: syncResult.coachEmails ?? [],
+        errors: syncResult.errors
+      });
       await loadData(session);
     } catch (error) {
       setCoachSyncMessage(error instanceof Error ? `Coach sync failed: ${error.message}` : "Coach sync failed.");
     } finally {
       setCoachSyncing(false);
+    }
+  }
+
+  async function refreshCoachDirectoryDebug() {
+    const token = session?.access_token;
+    if (!token || !isAdmin) {
+      setCoachDebugMessage("Only an active Admin coach can view directory debug data.");
+      return;
+    }
+
+    setCoachDebugLoading(true);
+    setCoachDebugMessage("Reading Supabase Auth users, profiles, and coaches...");
+
+    try {
+      const response = await fetch("/api/coach-directory-debug", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const result = (await response.json()) as Partial<CoachDirectoryDebugResult> & { error?: string };
+
+      if (!response.ok || result.error) {
+        setCoachDebugMessage(`Directory debug failed: ${result.error ?? response.statusText}`);
+        return;
+      }
+
+      setCoachDebugResult(result as CoachDirectoryDebugResult);
+      setCoachDebugMessage("Directory debug refreshed.");
+    } catch (error) {
+      setCoachDebugMessage(error instanceof Error ? `Directory debug failed: ${error.message}` : "Directory debug failed.");
+    } finally {
+      setCoachDebugLoading(false);
     }
   }
 
@@ -1679,17 +1739,54 @@ export default function Page() {
                   {coachSyncMessage && <p className="mt-3 rounded-lg bg-black/25 p-3 text-sm font-bold text-white/75">{coachSyncMessage}</p>}
                   <div className="mt-3 grid gap-2 text-xs font-bold text-white/65 sm:grid-cols-3">
                     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="text-lg font-black text-white">{profiles.length}</div>
-                      <div className="uppercase tracking-wide text-white/40">Current profiles</div>
+                      <div className="text-lg font-black text-white">{coachDebugResult?.authUsersCount ?? "-"}</div>
+                      <div className="uppercase tracking-wide text-white/40">Auth users</div>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="text-lg font-black text-white">{coaches.length}</div>
-                      <div className="uppercase tracking-wide text-white/40">Coach accounts</div>
+                      <div className="text-lg font-black text-white">{coachDebugResult?.profilesCount ?? profiles.length}</div>
+                      <div className="uppercase tracking-wide text-white/40">Profiles</div>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="text-lg font-black text-white">{profilesMissingFromCoaches.length}</div>
-                      <div className="uppercase tracking-wide text-white/40">Missing from coaches</div>
+                      <div className="text-lg font-black text-white">{coachDebugResult?.coachesCount ?? coaches.length}</div>
+                      <div className="uppercase tracking-wide text-white/40">Coaches</div>
                     </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshCoachDirectoryDebug}
+                    disabled={!isAdmin || coachDebugLoading}
+                    className="mt-3 min-h-10 w-full rounded-lg border border-line px-4 text-sm font-black text-white/75 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {coachDebugLoading ? "Reading Debug Data..." : "Refresh Directory Debug"}
+                  </button>
+                  {coachDebugMessage && <p className="mt-3 rounded-lg bg-black/25 p-3 text-sm font-bold text-white/65">{coachDebugMessage}</p>}
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                    <h4 className="text-xs font-black uppercase tracking-wide text-white/45">Emails Found In Profiles</h4>
+                    {coachDebugResult?.profileEmails.length ? (
+                      <div className="mt-2 space-y-1">
+                        {coachDebugResult.profileEmails.map((profile) => (
+                          <div key={profile.id} className="text-xs font-bold text-white/70">
+                            {profile.email ?? "No email"} - {profile.full_name} - {profile.position_group ?? "No position"}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-bold text-white/50">No profile emails loaded. Refresh debug data to read profiles with the server key.</p>
+                    )}
+                  </div>
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                    <h4 className="text-xs font-black uppercase tracking-wide text-white/45">Emails Found In Coaches</h4>
+                    {coachDebugResult?.coachEmails.length ? (
+                      <div className="mt-2 space-y-1">
+                        {coachDebugResult.coachEmails.map((coach) => (
+                          <div key={coach.id} className="text-xs font-bold text-white/70">
+                            {coach.email ?? "No email"} - {coach.full_name} - {coach.position_group ?? "No position"} - {coach.active ? "Active" : "Inactive"}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-bold text-white/50">No coach emails loaded. Refresh debug data to read coaches with the server key.</p>
+                    )}
                   </div>
                   <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
                     <h4 className="text-xs font-black uppercase tracking-wide text-white/45">Profiles Missing From Coaches</h4>
@@ -1709,6 +1806,7 @@ export default function Page() {
                     <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-xs leading-5 text-white/65">
                       <div className="font-black text-white">Last Sync Result</div>
                       <div>Synced coaches: {coachSyncResult.syncedCoachesCount}</div>
+                      <div>Profiles created from Auth users: {coachSyncResult.createdProfilesCount ?? 0}</div>
                       <div>Existing coaches before sync: {coachSyncResult.existingCoachesCount}</div>
                       <div>Profiles read: {coachSyncResult.profilesCount}</div>
                       <div>Coach accounts after sync: {coachSyncResult.coachesCount}</div>
