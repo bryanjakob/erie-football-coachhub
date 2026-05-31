@@ -156,7 +156,7 @@ function StatusPill({ status }: { status: RSVPStatus }) {
 }
 
 function RsvpSelection({ response }: { response: RSVPStatus | null }) {
-  return response ? <StatusPill status={response} /> : <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/15">Awaiting Attendance Response</span>;
+  return response ? <StatusPill status={response} /> : <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/15">No Response</span>;
 }
 
 function ErieLogo({ className = "" }: { className?: string }) {
@@ -259,6 +259,17 @@ function coachHasAuthAccount(coach: CoachAccount | null, profiles: CoachProfile[
 
 function coachAccountStatus(coach: CoachAccount | null, profiles: CoachProfile[], activeSession: Session | null) {
   return coachHasAuthAccount(coach, profiles, activeSession) ? "Active" : "Pending";
+}
+
+function coachAccountUserId(coach: CoachAccount, profiles: CoachProfile[], activeSession: Session | null) {
+  if (coach.auth_user_id) return coach.auth_user_id;
+
+  const coachEmail = normalizeEmail(coach.email);
+  if (!coachEmail) return null;
+
+  if (normalizeEmail(activeSession?.user.email) === coachEmail) return activeSession?.user.id ?? null;
+
+  return profiles.find((profile) => normalizeEmail(profile.email) === coachEmail)?.id ?? null;
 }
 
 function eventRsvpRequired(event: StaffEventRecord) {
@@ -529,13 +540,38 @@ export default function Page() {
   const coachName = currentProfile?.full_name ?? currentCoach?.full_name ?? session?.user.email ?? "Coach";
   const needsProfile = Boolean(session && !currentProfile);
 
-  const eventRsvpSummary = useCallback((eventId: string) => {
+  const eventAttendanceDetails = useCallback((eventId: string) => {
+    const uniqueNames = (records: RsvpRecord[]) => {
+      const names = new Map<string, string>();
+      records.forEach((record) => {
+        const name = record.coach_name?.trim() || "Coach";
+        names.set(record.user_id || normalizeEmail(name), name);
+      });
+      return Array.from(names.values()).sort((a, b) => a.localeCompare(b));
+    };
+
     const eventRsvps = rsvps.filter((rsvp) => rsvp.event_id === eventId);
+    const attending = uniqueNames(eventRsvps.filter((rsvp) => rsvp.response === "Yes"));
+    const notAttending = uniqueNames(eventRsvps.filter((rsvp) => rsvp.response === "No"));
+    const respondedUserIds = new Set(eventRsvps.map((rsvp) => rsvp.user_id).filter(Boolean));
+    const respondedNames = new Set(eventRsvps.map((rsvp) => normalizeEmail(rsvp.coach_name)).filter(Boolean));
+    const activeCoaches = coaches.filter((coach) => coachHasAuthAccount(coach, profiles, session));
+    const noResponse = activeCoaches
+      .filter((coach) => {
+        const coachUserId = coachAccountUserId(coach, profiles, session);
+        if (coachUserId && respondedUserIds.has(coachUserId)) return false;
+        return !respondedNames.has(normalizeEmail(coach.full_name));
+      })
+      .map((coach) => coach.full_name)
+      .sort((a, b) => a.localeCompare(b));
+
     return {
-      Yes: eventRsvps.filter((rsvp) => rsvp.response === "Yes").length,
-      No: eventRsvps.filter((rsvp) => rsvp.response === "No").length
-    } satisfies Record<RSVPStatus, number>;
-  }, [rsvps]);
+      attending,
+      notAttending,
+      noResponse,
+      totalCoaches: activeCoaches.length
+    };
+  }, [coaches, profiles, rsvps, session]);
 
   const myRsvp = useCallback((eventId: string): RSVPStatus | null => {
     return rsvps.find((rsvp) => rsvp.event_id === eventId && rsvp.user_id === session?.user.id)?.response ?? null;
@@ -1043,7 +1079,7 @@ export default function Page() {
                   <h2 className="text-lg font-black">Attendance Summary</h2>
                   <div className="mt-3 grid grid-cols-2 gap-3">
                     <Metric label="My Attendance Completed" value={`${myCompletedRsvps}`} tone="text-orange" />
-                    <Metric label="Awaiting Attendance Response" value={`${myPendingRsvps}`} tone={myPendingRsvps ? "text-red-200" : "text-orange"} />
+                    <Metric label="No Response" value={`${myPendingRsvps}`} tone={myPendingRsvps ? "text-red-200" : "text-orange"} />
                     <Metric label="Total Events" value={`${events.length}`} />
                   </div>
                 </section>
@@ -1092,25 +1128,51 @@ export default function Page() {
                   {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
                   {rsvpError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{rsvpError}</p>}
                   {!eventFetchError && events.length === 0 && <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/70">No events exist yet. Create one with the form and it will appear here after Supabase saves it.</p>}
-                  {events.map((event) => (
-                    <div key={event.id} className="rounded-lg border border-line bg-graphite/65 p-3">
-                      <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-black">{event.title}</h3>
-                            <RsvpSelection response={myRsvp(event.id)} />
+                  {events.map((event) => {
+                    const attendance = eventAttendanceDetails(event.id);
+
+                    return (
+                      <div key={event.id} className="rounded-lg border border-line bg-graphite/65 p-3">
+                        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-black">{event.title}</h3>
+                              <RsvpSelection response={myRsvp(event.id)} />
+                            </div>
+                            <p className="mt-1 text-sm font-bold text-white/60">{formatDateTime(event.date)}</p>
+                            <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/40">Location: {eventLocation(event)}</p>
                           </div>
-                          <p className="mt-1 text-sm font-bold text-white/60">{formatDateTime(event.date)}</p>
-                          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-white/40">Location: {eventLocation(event)}</p>
+                          <div className="grid grid-cols-2 gap-2 sm:w-48">
+                            {(["Yes", "No"] as RSVPStatus[]).map((response) => (
+                              <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-10 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{attendanceLabels[response]}</button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 sm:w-40">
-                          {(["Yes", "No"] as RSVPStatus[]).map((response) => (
-                            <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-10 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{attendanceLabels[response]}</button>
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          <Metric label="Attending" value={`${attendance.attending.length}`} tone="text-orange" />
+                          <Metric label="Not Attending" value={`${attendance.notAttending.length}`} tone="text-red-200" />
+                          <Metric label="No Response" value={`${attendance.noResponse.length}`} tone={attendance.noResponse.length ? "text-white" : "text-orange"} />
+                          <Metric label="Total Coaches" value={`${attendance.totalCoaches}`} />
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-3">
+                          {[
+                            { label: "Attending", names: attendance.attending, tone: "text-orange" },
+                            { label: "Not Attending", names: attendance.notAttending, tone: "text-red-200" },
+                            { label: "No Response", names: attendance.noResponse, tone: "text-white/70" }
+                          ].map((group) => (
+                            <div key={group.label} className="rounded-lg border border-line bg-black/20 p-3">
+                              <div className={`text-xs font-black uppercase tracking-wide ${group.tone}`}>{group.label}</div>
+                              <div className="mt-2 space-y-1">
+                                {group.names.length ? group.names.map((name) => (
+                                  <div key={name} className="truncate text-sm font-bold text-white/75">{name}</div>
+                                )) : <div className="text-sm text-white/35">None</div>}
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             </div>
@@ -1236,8 +1298,10 @@ export default function Page() {
                         <RsvpSelection response={myRsvp(selectedEvent.id)} />
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Metric label="Attending" value={`${eventRsvpSummary(selectedEvent.id).Yes}`} tone="text-orange" />
-                        <Metric label="Not Attending" value={`${eventRsvpSummary(selectedEvent.id).No}`} tone="text-red-200" />
+                        <Metric label="Attending" value={`${eventAttendanceDetails(selectedEvent.id).attending.length}`} tone="text-orange" />
+                        <Metric label="Not Attending" value={`${eventAttendanceDetails(selectedEvent.id).notAttending.length}`} tone="text-red-200" />
+                        <Metric label="No Response" value={`${eventAttendanceDetails(selectedEvent.id).noResponse.length}`} />
+                        <Metric label="Total Coaches" value={`${eventAttendanceDetails(selectedEvent.id).totalCoaches}`} />
                       </div>
                       <button type="button" onClick={() => setSection("Attendance")} className="mt-3 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink">Open Attendance Page</button>
                     </div>
