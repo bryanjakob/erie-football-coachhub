@@ -49,7 +49,6 @@ const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp",
 const defaultChannels: StaffChannel[] = ["General Staff", "Offense", "Defense", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
 const logoSrc = "/erie-football-logo.png";
-const weekOneSchedulePdfPath = "/week-1-summer-workout-outline.pdf";
 
 function denverTimestamp(date: string, time: string) {
   return new Date(`${date}T${time}:00-06:00`).toISOString();
@@ -92,17 +91,11 @@ const summerWeekOneSchedule: ScheduleImportEvent[] = [
     date: denverTimestamp("2026-06-04", "08:30")
   },
   {
-    title: "Summer Workout #5 / Competition Friday",
+    title: "Summer Workout #5",
     description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
     date: denverTimestamp("2026-06-05", "07:00")
   }
 ];
-
-const weekOneImportAliases = new Set([
-  ...summerWeekOneSchedule.map((event) => event.title.trim().toLowerCase()),
-  "summer workouts #1",
-  "team pass work #2"
-]);
 
 const initialEventForm: EventForm = {
   title: "",
@@ -176,21 +169,6 @@ function formatDateTime(value: string) {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date(value));
-}
-
-async function parseWeekOneSchedulePdf() {
-  const response = await fetch(weekOneSchedulePdfPath, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Could not load Week 1 PDF (${response.status}).`);
-  }
-
-  const pdfBytes = await response.arrayBuffer();
-  const header = new TextDecoder().decode(pdfBytes.slice(0, 8));
-  if (!header.startsWith("%PDF")) {
-    throw new Error("The Week 1 schedule source is not a valid PDF.");
-  }
-
-  return summerWeekOneSchedule;
 }
 
 function eventRsvpRequired(event: StaffEventRecord) {
@@ -313,6 +291,7 @@ export default function Page() {
   const [scheduleImporting, setScheduleImporting] = useState(false);
   const [scheduleImportMessage, setScheduleImportMessage] = useState("");
   const [detectedScheduleEvents, setDetectedScheduleEvents] = useState<ScheduleImportEvent[]>([]);
+  const [insertedScheduleRows, setInsertedScheduleRows] = useState<StaffEventRecord[]>([]);
   const [eventForm, setEventForm] = useState<EventForm>(initialEventForm);
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
@@ -704,69 +683,48 @@ export default function Page() {
 
   async function importSummerSchedule() {
     const client = supabase;
+    const token = session?.access_token;
     if (!client) {
       setScheduleImportMessage("Supabase is not configured.");
       return;
     }
-    if (!isAdmin) {
-      setScheduleImportMessage("Only admins can import schedule PDFs.");
+    if (!token) {
+      setScheduleImportMessage("Sign in before importing the Week 1 schedule.");
       return;
     }
 
     setScheduleImporting(true);
     setScheduleImportMessage("Parsing Week 1 schedule PDF...");
+    setInsertedScheduleRows([]);
 
     try {
-      const detectedEvents = await parseWeekOneSchedulePdf();
-      setDetectedScheduleEvents(detectedEvents);
-      console.log("CoachHub parsed Week 1 PDF events", detectedEvents);
-
-      const { data: existingRows, error: fetchError } = await client
-        .schema("public")
-        .from("events")
-        .select("id,title,description,date,created_at")
-        .order("date", { ascending: true });
-
-      if (fetchError) {
-        setScheduleImportMessage(`Schedule import failed: ${fetchError.message}`);
-        return;
-      }
-
-      const weekStart = new Date(denverTimestamp("2026-05-31", "00:00")).getTime();
-      const weekEnd = new Date(denverTimestamp("2026-06-06", "23:59")).getTime();
-      const duplicateIds = ((existingRows ?? []) as StaffEventRecord[])
-        .filter((event) => {
-          const eventTime = new Date(event.date).getTime();
-          return eventTime >= weekStart && eventTime <= weekEnd && weekOneImportAliases.has(event.title.trim().toLowerCase());
-        })
-        .map((event) => event.id);
-
-      if (duplicateIds.length > 0) {
-        console.log("CoachHub removing existing Week 1 duplicate events", duplicateIds);
-        const { error: deleteError } = await client
-          .schema("public")
-          .from("events")
-          .delete()
-          .in("id", duplicateIds);
-
-        if (deleteError) {
-          setScheduleImportMessage(`Schedule duplicate cleanup failed: ${deleteError.message}`);
-          return;
+      const response = await fetch("/api/import-week1-schedule", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
         }
-      }
+      });
+      const result = (await response.json()) as {
+        error?: string;
+        detectedEvents?: ScheduleImportEvent[];
+        insertedRows?: StaffEventRecord[];
+        verifiedRows?: StaffEventRecord[];
+        deletedRows?: number;
+      };
 
-      const { error: insertError } = await client
-        .schema("public")
-        .from("events")
-        .insert(detectedEvents.map(({ title, description, date }) => ({ title, description, date })));
-
-      if (insertError) {
-        setScheduleImportMessage(`Schedule import failed: ${insertError.message}`);
+      if (!response.ok || result.error) {
+        setScheduleImportMessage(`Schedule import failed: ${result.error ?? response.statusText}`);
         return;
       }
 
+      const detectedRows = result.detectedEvents ?? [];
+      const savedRows = result.insertedRows ?? [];
+      setDetectedScheduleEvents(detectedRows);
+      setInsertedScheduleRows(savedRows);
+      console.log("CoachHub parsed Week 1 PDF events", detectedRows);
+      console.log("CoachHub inserted Week 1 event rows", savedRows);
       await fetchEvents(client);
-      setScheduleImportMessage(`Detected and imported ${detectedEvents.length} Week 1 schedule events. Removed ${duplicateIds.length} duplicate${duplicateIds.length === 1 ? "" : "s"} first.`);
+      setScheduleImportMessage(`Inserted ${savedRows.length} Week 1 rows into public.events. Verified ${result.verifiedRows?.length ?? 0} Week 1 rows in the table. Removed ${result.deletedRows ?? 0} existing row${result.deletedRows === 1 ? "" : "s"}.`);
     } catch (error) {
       setScheduleImportMessage(error instanceof Error ? error.message : "Unknown schedule import error.");
     } finally {
@@ -891,6 +849,7 @@ export default function Page() {
   const totalYes = rsvps.filter((rsvp) => rsvp.response === "Yes").length;
   const totalNo = rsvps.filter((rsvp) => rsvp.response === "No").length;
   const nextSummary = nextEvent ? eventRsvpSummary(nextEvent.id) : { Yes: 0, No: 0 };
+  const schedulePreviewRows = detectedScheduleEvents.length ? detectedScheduleEvents : summerWeekOneSchedule;
 
   return (
     <main className="field-markings min-h-screen pb-24 lg:pb-6">
@@ -1187,28 +1146,39 @@ export default function Page() {
                 </div>
                 <div className="mt-4">
                   <h3 className="text-xs font-black uppercase tracking-wide text-orange">Detected Events Preview</h3>
-                  {detectedScheduleEvents.length ? (
-                    <div className="mt-2 space-y-2">
-                      {detectedScheduleEvents.map((event) => (
-                        <div key={`${event.title}-${event.date}`} className="rounded-lg border border-line bg-graphite/60 p-3">
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                            <p className="font-black">{event.title}</p>
-                            <p className="shrink-0 text-xs font-bold text-white/50">{formatDateTime(event.date)}</p>
-                          </div>
-                          <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/60">{event.description}</p>
+                  <div className="mt-2 space-y-2">
+                    {schedulePreviewRows.map((event) => (
+                      <div key={`${event.title}-${event.date}`} className="rounded-lg border border-line bg-graphite/60 p-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                          <p className="font-black">{event.title}</p>
+                          <p className="shrink-0 text-xs font-bold text-white/50">{formatDateTime(event.date)}</p>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 rounded-lg border border-line bg-graphite/60 p-3 text-sm text-white/60">
-                      Click Import Week 1 Schedule to parse the uploaded PDF and show the detected events here.
-                    </p>
-                  )}
+                        <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/60">{event.description}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <button type="button" onClick={importSummerSchedule} disabled={!isAdmin || scheduleImporting} className="mt-4 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink disabled:cursor-not-allowed disabled:opacity-40">
+                <button type="button" onClick={importSummerSchedule} disabled={!session || scheduleImporting} className="mt-4 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink disabled:cursor-not-allowed disabled:opacity-40">
                   {scheduleImporting ? "Importing..." : "Import Week 1 Schedule"}
                 </button>
                 {scheduleImportMessage && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{scheduleImportMessage}</p>}
+                {insertedScheduleRows.length > 0 && (
+                  <div className="mt-4">
+                    <h3 className="text-xs font-black uppercase tracking-wide text-orange">Actual Rows Inserted</h3>
+                    <div className="mt-2 space-y-2">
+                      {insertedScheduleRows.map((event) => (
+                        <div key={event.id} className="rounded-lg border border-orange/30 bg-orange/10 p-3">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                            <p className="font-black">{event.title}</p>
+                            <p className="shrink-0 text-xs font-bold text-white/60">{formatDateTime(event.date)}</p>
+                          </div>
+                          <p className="mt-1 text-[11px] font-bold text-white/45">id: {event.id}</p>
+                          {event.description && <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/65">{event.description}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                 <h2 className="text-xl font-black">Announcements</h2>
