@@ -5,7 +5,7 @@ import { positionGroups, type CoachRole } from "@/lib/supabase";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const roles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
+const roles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach", "Coach"];
 
 export async function POST(request: Request) {
   if (!supabaseUrl || !serviceRoleKey) {

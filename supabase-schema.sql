@@ -5,7 +5,14 @@ create extension if not exists pgcrypto;
 
 do $$
 begin
-  create type coach_role as enum ('Admin', 'Head Coach', 'Varsity Coach', 'JV Coach', 'Volunteer Coach');
+  create type coach_role as enum ('Admin', 'Head Coach', 'Varsity Coach', 'JV Coach', 'Volunteer Coach', 'Coach');
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter type coach_role add value if not exists 'Coach';
 exception
   when duplicate_object then null;
 end $$;
@@ -29,7 +36,7 @@ create table if not exists coaches (
   auth_user_id uuid unique references auth.users(id) on delete set null,
   email text unique not null,
   full_name text not null,
-  role coach_role not null default 'Volunteer Coach',
+  role coach_role not null default 'Coach',
   position_group text,
   active boolean not null default true,
   invited_by uuid references coaches(id),
@@ -45,6 +52,8 @@ create table if not exists profiles (
 );
 
 alter table profiles add column if not exists position_group text;
+
+alter table coaches alter column role set default 'Coach';
 
 create table if not exists events (
   id uuid primary key default gen_random_uuid(),
@@ -146,6 +155,22 @@ values
   ('Defense'),
   ('Special Teams')
 on conflict (name) do nothing;
+
+insert into coaches (auth_user_id, email, full_name, position_group, role, active)
+select
+  profiles.id,
+  lower(profiles.email),
+  profiles.full_name,
+  profiles.position_group,
+  'Coach'::coach_role,
+  true
+from profiles
+where profiles.email is not null
+on conflict (email) do update
+set
+  auth_user_id = coalesce(coaches.auth_user_id, excluded.auth_user_id),
+  full_name = excluded.full_name,
+  position_group = coalesce(coaches.position_group, excluded.position_group);
 
 alter table coaches enable row level security;
 alter table profiles enable row level security;

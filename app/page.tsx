@@ -52,7 +52,7 @@ const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chat
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
 const defaultChannels: StaffChannel[] = ["General Staff", "Offense", "Defense", "Special Teams"];
-const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
+const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach", "Coach"];
 const logoSrc = "/erie-football-logo.png";
 
 function denverTimestamp(date: string, time: string) {
@@ -478,17 +478,33 @@ export default function Page() {
       coachRows.find((coach) => normalizeEmail(coach.email) === userEmail) ??
       null;
     const profile = (profileResult.data as CoachProfile | null) ?? null;
-    setCurrentCoach(coachAccount);
+    let resolvedCoachAccount = coachAccount;
+    if (!resolvedCoachAccount && profile?.position_group && activeSession.access_token) {
+      try {
+        const ensuredCoach = await ensureCoachAccount(profile.full_name, profile.position_group, activeSession.access_token);
+        if (ensuredCoach) {
+          resolvedCoachAccount = ensuredCoach;
+          setCoaches((existingCoaches) => [
+            ...existingCoaches.filter((coach) => coach.id !== ensuredCoach.id),
+            ensuredCoach
+          ]);
+        }
+      } catch (error) {
+        console.warn("CoachHub ensure coach account failed", error);
+      }
+    }
+
+    setCurrentCoach(resolvedCoachAccount);
     setCurrentProfile(profile);
-    setProfileName(profile?.full_name ?? coachAccount?.full_name ?? "");
-    setProfilePositionGroup(profile?.position_group ?? (coachAccount?.position_group as PositionGroup | null) ?? "");
+    setProfileName(profile?.full_name ?? resolvedCoachAccount?.full_name ?? "");
+    setProfilePositionGroup(profile?.position_group ?? (resolvedCoachAccount?.position_group as PositionGroup | null) ?? "");
 
     const firstError = profileResult.error || profilesResult.error || coachesResult.error || rsvpsResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
       setStatus(firstError.message);
     } else if (!profile) {
       setStatus("Complete your profile so attendance responses can attach to your coach name.");
-    } else if (!coachAccount) {
+    } else if (!resolvedCoachAccount) {
       setStatus("Signed in as a coach. Admin features require staff role assignment.");
     } else {
       setStatus("");
@@ -627,6 +643,24 @@ export default function Page() {
     setStatus(error ? error.message : "Signed in.");
   }
 
+  async function ensureCoachAccount(fullName: string, positionGroup: PositionGroup, token: string) {
+    const response = await fetch("/api/ensure-coach-account", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ fullName, positionGroup })
+    });
+    const result = (await response.json()) as { coach?: CoachAccount; error?: string };
+
+    if (!response.ok || result.error) {
+      throw new Error(result.error ?? "Coach account save failed.");
+    }
+
+    return result.coach ?? null;
+  }
+
   async function signUpCoach(input: SignUpInput) {
     const client = supabase;
     if (!client) return;
@@ -694,8 +728,20 @@ export default function Page() {
       return;
     }
 
+    let coachRecord: CoachAccount | null = null;
+    if (activeSession?.access_token) {
+      try {
+        coachRecord = await ensureCoachAccount(fullName, positionGroup, activeSession.access_token);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Coach directory save failed.";
+        setStatus(`Account created, but coach directory save failed: ${message}`);
+        return;
+      }
+    }
+
     setSession(activeSession);
     setCurrentProfile(profileResult.data as CoachProfile);
+    setCurrentCoach(coachRecord);
     setProfileName(fullName);
     setProfilePositionGroup(positionGroup);
     setStatus("Coach account created.");
@@ -756,7 +802,19 @@ export default function Page() {
       return;
     }
 
+    let coachRecord: CoachAccount | null = null;
+    if (session.access_token) {
+      try {
+        coachRecord = await ensureCoachAccount(fullName, positionGroup, session.access_token);
+      } catch (ensureError) {
+        const message = ensureError instanceof Error ? ensureError.message : "Coach directory save failed.";
+        setStatus(`Profile saved, but coach directory save failed: ${message}`);
+        return;
+      }
+    }
+
     setCurrentProfile(data as CoachProfile);
+    if (coachRecord) setCurrentCoach(coachRecord);
     setProfileName(fullName);
     setProfilePositionGroup(positionGroup);
     setStatus("Profile saved.");

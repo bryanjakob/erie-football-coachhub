@@ -8,7 +8,7 @@ export const supabase =
 
 export const installBucket = "install-files";
 
-export type CoachRole = "Admin" | "Head Coach" | "Varsity Coach" | "JV Coach" | "Volunteer Coach";
+export type CoachRole = "Admin" | "Head Coach" | "Varsity Coach" | "JV Coach" | "Volunteer Coach" | "Coach";
 
 export type PositionGroup =
   | "Head Coach"
