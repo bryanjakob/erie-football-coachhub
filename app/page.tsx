@@ -48,7 +48,7 @@ type ScheduleImportEvent = {
 
 type SyncCoachesResult = {
   syncedCoachesCount: number;
-  createdProfilesCount?: number;
+  createdProfilesCount: number;
   existingCoachesCount: number;
   profilesCount: number;
   coachesCount: number;
@@ -62,12 +62,12 @@ type SyncCoachesResult = {
   }>;
   coachEmails?: Array<{
     id: string;
-    auth_user_id?: string | null;
+    auth_user_id: string | null;
     full_name: string;
     email: string | null;
-    role?: string;
+    role: string;
     position_group: string | null;
-    active?: boolean;
+    active: boolean;
   }>;
   missingProfilesAfterSync: Array<{
     id: string;
