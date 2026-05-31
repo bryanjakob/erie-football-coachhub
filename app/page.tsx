@@ -13,7 +13,6 @@ import {
   type CoachProfile,
   type CoachRole,
   type EventType,
-  type InstallLibraryFileRecord,
   type RsvpRecord,
   type RSVPStatus,
   type StaffChannel,
@@ -48,7 +47,6 @@ type ScheduleImportEvent = {
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
-const folders = ["All", "Fronts", "Coverages", "Blitzes", "Run Fits", "Practice Plans", "Drill Cards", "Opponent Scouts"];
 const defaultChannels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
 const logoSrc = "/erie-football-logo.png";
@@ -174,19 +172,6 @@ function eventRsvpRequired(event: StaffEventRecord) {
   return event.rsvp_required ?? true;
 }
 
-function fileTypeFromMime(mime: string) {
-  if (mime.includes("pdf")) return "PDF";
-  if (mime.includes("image")) return "Image";
-  if (mime.includes("video")) return "Video";
-  return "File";
-}
-
-function fileSize(size: number | null) {
-  if (!size) return "Stored";
-  if (size > 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(size / 1024))} KB`;
-}
-
 function initials(name?: string | null, email?: string | null) {
   const source = name || email || "Coach";
   return source
@@ -292,7 +277,6 @@ export default function Page() {
   const [events, setEvents] = useState<StaffEventRecord[]>([]);
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
   const [rsvpError, setRsvpError] = useState("");
-  const [installFiles, setInstallFiles] = useState<InstallLibraryFileRecord[]>([]);
   const [channels, setChannels] = useState<ChatChannelRecord[]>([]);
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
@@ -307,11 +291,6 @@ export default function Page() {
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
   const [profileName, setProfileName] = useState("");
-  const [folder, setFolder] = useState("All");
-  const [installTitle, setInstallTitle] = useState("");
-  const [installFolder, setInstallFolder] = useState("Fronts");
-  const [installUpload, setInstallUpload] = useState<File | null>(null);
-  const [installQuery, setInstallQuery] = useState("");
   const [channelName, setChannelName] = useState<StaffChannel>("Full Staff");
   const [messageBody, setMessageBody] = useState("");
   const [messageUpload, setMessageUpload] = useState<File | null>(null);
@@ -377,7 +356,6 @@ export default function Page() {
       profileResult,
       coachesResult,
       rsvpsResult,
-      filesResult,
       channelsResult,
       messagesResult,
       announcementsResult
@@ -385,7 +363,6 @@ export default function Page() {
       client.from("profiles").select("id,full_name,email,created_at").eq("id", activeSession.user.id).maybeSingle(),
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
       client.schema("public").from("rsvps").select("id,event_id,user_id,coach_name,response,created_at"),
-      client.from("install_library_files").select("*").order("created_at", { ascending: false }),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
       client.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
       client.from("announcements").select("*").order("created_at", { ascending: false }).limit(8)
@@ -401,7 +378,6 @@ export default function Page() {
 
     setCoaches((coachesResult.data ?? []) as CoachAccount[]);
     setRsvps((rsvpsResult.data ?? []) as RsvpRecord[]);
-    setInstallFiles((filesResult.data ?? []) as InstallLibraryFileRecord[]);
     setMessages((messagesResult.data ?? []) as ChatMessageRecord[]);
     setAnnouncements((announcementsResult.data ?? []) as AnnouncementRecord[]);
 
@@ -411,7 +387,7 @@ export default function Page() {
     setCurrentProfile(profile);
     setProfileName(profile?.full_name ?? coachAccount?.full_name ?? "");
 
-    const firstError = profileResult.error || coachesResult.error || rsvpsResult.error || filesResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
+    const firstError = profileResult.error || coachesResult.error || rsvpsResult.error || channelsResult.error || messagesResult.error || announcementsResult.error;
     if (firstError) {
       setStatus(firstError.message);
     } else if (!profile) {
@@ -458,7 +434,6 @@ export default function Page() {
       .channel("coachhub-persistent-data")
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void fetchEvents(client))
       .on("postgres_changes", { event: "*", schema: "public", table: "rsvps" }, () => void loadData(session))
-      .on("postgres_changes", { event: "*", schema: "public", table: "install_library_files" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "coaches" }, () => void loadData(session))
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => void loadData(session))
@@ -844,33 +819,6 @@ export default function Page() {
     await loadData(session);
   }
 
-  async function uploadInstall(event: FormEvent) {
-    event.preventDefault();
-    const client = supabase;
-    if (!client || !currentCoach || !installUpload) return;
-    const cleanName = installUpload.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const path = `${installFolder}/${Date.now()}-${cleanName}`;
-    const upload = await client.storage.from(installBucket).upload(path, installUpload);
-    if (upload.error) {
-      setStatus(upload.error.message);
-      return;
-    }
-    const { error } = await client.from("install_library_files").insert({
-      title: installTitle || installUpload.name,
-      folder: installFolder,
-      file_type: fileTypeFromMime(installUpload.type),
-      storage_path: path,
-      file_size: installUpload.size,
-      uploaded_by: currentCoach.id
-    });
-    setStatus(error ? error.message : "Install file uploaded and saved.");
-    if (!error) {
-      setInstallTitle("");
-      setInstallUpload(null);
-    }
-    await loadData(session);
-  }
-
   async function downloadInstall(path: string) {
     const client = supabase;
     if (!client) return;
@@ -917,11 +865,6 @@ export default function Page() {
     setStatus(error ? error.message : "Message moderation saved.");
     await loadData(session);
   }
-
-  const filteredFiles = useMemo(
-    () => installFiles.filter((file) => (folder === "All" || file.folder === folder) && file.title.toLowerCase().includes(installQuery.toLowerCase())),
-    [folder, installFiles, installQuery]
-  );
 
   const currentMessages = useMemo(
     () => messages.filter((message) => message.channel_id === selectedChannel?.id),
@@ -1139,43 +1082,16 @@ export default function Page() {
 
           {section === "Installs" && (
             <section className="rounded-lg border border-line bg-charcoal/90 p-4">
-              <form onSubmit={uploadInstall} className="flex flex-wrap items-end gap-3">
-                <div className="min-w-48 flex-1">
-                  <label className="text-xs font-bold uppercase tracking-wide text-white/40">Title</label>
-                  <input value={installTitle} onChange={(event) => setInstallTitle(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none" placeholder="Install title" />
-                </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wide text-white/40">Folder</label>
-                  <select value={installFolder} onChange={(event) => setInstallFolder(event.target.value)} className="mt-1 min-h-11 rounded-lg border border-line bg-graphite/80 px-3 text-sm outline-none">
-                    {folders.filter((item) => item !== "All").map((item) => <option key={item}>{item}</option>)}
-                  </select>
+                  <p className="text-xs font-bold uppercase tracking-wide text-orange">Install Library</p>
+                  <h2 className="mt-1 text-2xl font-black">Coming Soon</h2>
                 </div>
-                <input onChange={(event) => setInstallUpload(event.target.files?.[0] ?? null)} className="min-h-11 rounded-lg border border-line bg-graphite/80 px-3 py-2 text-sm" type="file" />
-                <button disabled={!installUpload} className="flex min-h-11 items-center gap-2 rounded-lg bg-orange px-4 font-black text-ink disabled:opacity-40"><Icon name="Upload" /> Upload</button>
-              </form>
-              <div className="mt-4 flex min-h-12 items-center gap-3 rounded-lg border border-line bg-graphite/80 px-4">
-                <Icon name="Search" />
-                <input value={installQuery} onChange={(event) => setInstallQuery(event.target.value)} className="w-full bg-transparent text-sm outline-none placeholder:text-white/40" placeholder="Search installs, scouts, drill cards" />
+                <span className="rounded-full bg-orange/15 px-3 py-1 text-xs font-black text-orange ring-1 ring-orange/30">Disabled</span>
               </div>
-              <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-                {folders.map((item) => (
-                  <button key={item} onClick={() => setFolder(item)} className={`min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold ${folder === item ? "bg-orange text-ink" : "border border-line bg-graphite/80 text-white/70"}`}>{item}</button>
-                ))}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredFiles.map((file) => (
-                  <article key={file.id} className="rounded-lg border border-line bg-graphite/70 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-black">{file.title}</h3>
-                        <p className="mt-1 text-sm text-white/50">{file.folder} - {file.file_type} - {fileSize(file.file_size)}</p>
-                      </div>
-                      <button type="button" onClick={() => downloadInstall(file.storage_path)} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line" title={`Download ${file.title}`}><Icon name="Download" /></button>
-                    </div>
-                    <div className="mt-4 text-xs font-bold uppercase tracking-wide text-white/40">Uploaded {formatDateTime(file.created_at)}</div>
-                  </article>
-                ))}
-              </div>
+              <p className="mt-4 rounded-lg bg-graphite/70 p-4 text-sm text-white/70">
+                Installs, drill cards, scouts, and file uploads are temporarily turned off. Coach accounts, profiles, calendar events, attendance, RSVPs, and schedule visibility remain active.
+              </p>
             </section>
           )}
 
