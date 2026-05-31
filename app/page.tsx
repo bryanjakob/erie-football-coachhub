@@ -233,19 +233,15 @@ function eventRsvpRequired(event: StaffEventRecord) {
 }
 
 function LoginPanel({
-  session,
   status,
   onLogin,
   onSignUp,
-  onReset,
-  onLogout
+  onReset
 }: {
-  session: Session | null;
   status: string;
   onLogin: (email: string, password: string) => Promise<void>;
   onSignUp: (input: SignUpInput) => Promise<void>;
   onReset: (email: string) => Promise<void>;
-  onLogout: () => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -260,21 +256,6 @@ function LoginPanel({
   async function handleSignUp(event: FormEvent) {
     event.preventDefault();
     await onSignUp(signUpForm);
-  }
-
-  if (session) {
-    return (
-      <section className="rounded-lg border border-line bg-charcoal/90 p-4 shadow-glow md:p-5">
-        <div className="flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-black">Signed In</h2>
-            <p className="truncate text-sm text-white/60">{session.user.email}</p>
-          </div>
-          <button onClick={onLogout} className="min-h-11 rounded-lg border border-line px-4 text-sm font-bold text-white/80">Sign Out</button>
-        </div>
-        {status && <p className="mt-3 rounded-lg bg-graphite/80 p-3 text-sm text-white/70">{status}</p>}
-      </section>
-    );
   }
 
   return (
@@ -906,6 +887,7 @@ export default function Page() {
 
   const teamName = "Erie Football";
   const pageTitle = section === "Home" ? "Staff Dashboard" : section;
+  const coachEmail = currentProfile?.email ?? currentCoach?.email ?? session?.user.email ?? "";
   const nextEvent = upcomingEvents[0];
   const myCompletedRsvps = events.filter((event) => Boolean(myRsvp(event.id))).length;
   const myPendingRsvps = Math.max(events.length - myCompletedRsvps, 0);
@@ -934,6 +916,7 @@ export default function Page() {
           <div className="mt-auto rounded-lg border border-line bg-graphite/70 p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-white/40">{coachRole}</p>
             <p className="mt-1 font-black">{coachName}</p>
+            {coachEmail && <p className="truncate text-xs font-bold text-white/45">{coachEmail}</p>}
             <p className="text-sm text-white/50">{teamName}</p>
           </div>
         </aside>
@@ -969,12 +952,13 @@ export default function Page() {
                       <div>
                         <h2 className="text-2xl font-black">{coachName}</h2>
                         <p className="mt-1 text-sm font-bold text-white/55">{coachRole} - {teamName}</p>
+                        {coachEmail && <p className="mt-1 text-sm text-white/50">{coachEmail}</p>}
                       </div>
                       <button onClick={logout} className="min-h-10 rounded-lg border border-line px-4 text-sm font-bold text-white/80">Sign Out</button>
                     </div>
                   </section>
                 ) : (
-                  <LoginPanel session={session} status={status} onLogin={login} onSignUp={signUpCoach} onReset={resetPassword} onLogout={logout} />
+                  <LoginPanel status={status} onLogin={login} onSignUp={signUpCoach} onReset={resetPassword} />
                 )}
                 <section className="rounded-lg border border-orange/30 bg-charcoal/95 p-4 shadow-glow">
                   {nextEvent ? (
