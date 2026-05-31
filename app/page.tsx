@@ -4,7 +4,6 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  installBucket,
   supabase,
   type AnnouncementRecord,
   type ChatChannelRecord,
@@ -47,7 +46,7 @@ type ScheduleImportEvent = {
 const navItems: Section[] = ["Home", "Calendar", "Attendance", "Installs", "Chats", "Admin"];
 const quickLinks: Section[] = ["Calendar", "Attendance", "Installs", "Chats"];
 const eventTypes: EventType[] = ["Workout", "Practice", "Staff Meeting", "Camp", "Game", "Clinic"];
-const defaultChannels: StaffChannel[] = ["Full Staff", "Defensive Staff", "Offensive Staff", "DBs", "LBs", "DL", "Special Teams"];
+const defaultChannels: StaffChannel[] = ["General Staff", "Offense", "Defense", "Special Teams"];
 const coachRoles: CoachRole[] = ["Admin", "Head Coach", "Varsity Coach", "JV Coach", "Volunteer Coach"];
 const logoSrc = "/erie-football-logo.png";
 
@@ -291,9 +290,8 @@ export default function Page() {
   const [announcementBody, setAnnouncementBody] = useState("");
   const [coachForm, setCoachForm] = useState({ fullName: "", email: "", role: "Varsity Coach" as CoachRole, group: "" });
   const [profileName, setProfileName] = useState("");
-  const [channelName, setChannelName] = useState<StaffChannel>("Full Staff");
+  const [channelName, setChannelName] = useState<StaffChannel>("General Staff");
   const [messageBody, setMessageBody] = useState("");
-  const [messageUpload, setMessageUpload] = useState<File | null>(null);
 
   const isConfigured = Boolean(supabase);
   const isAdmin = currentCoach?.role === "Admin";
@@ -364,17 +362,16 @@ export default function Page() {
       client.from("coaches").select("*").eq("active", true).order("created_at", { ascending: true }),
       client.schema("public").from("rsvps").select("id,event_id,user_id,coach_name,response,created_at"),
       client.from("chat_channels").select("*").order("name", { ascending: true }),
-      client.from("chat_messages").select("*, coaches(full_name)").order("created_at", { ascending: true }),
+      client.from("chat_messages").select("id,channel_id,user_id,coach_name,message,created_at").order("created_at", { ascending: true }),
       client.from("announcements").select("*").order("created_at", { ascending: false }).limit(8)
     ]);
 
-    if (channelsResult.data?.length === 0) {
-      await client.from("chat_channels").upsert(defaultChannels.map((name) => ({ name })), { onConflict: "name" });
-      const refreshedChannels = await client.from("chat_channels").select("*").order("name", { ascending: true });
-      setChannels((refreshedChannels.data ?? []) as ChatChannelRecord[]);
-    } else {
-      setChannels((channelsResult.data ?? []) as ChatChannelRecord[]);
-    }
+    await client.from("chat_channels").upsert(defaultChannels.map((name) => ({ name })), { onConflict: "name" });
+    const refreshedChannels = await client.from("chat_channels").select("*").in("name", defaultChannels);
+    const orderedChannels = defaultChannels
+      .map((name) => ((refreshedChannels.data ?? []) as ChatChannelRecord[]).find((channel) => channel.name === name))
+      .filter(Boolean) as ChatChannelRecord[];
+    setChannels(orderedChannels);
 
     setCoaches((coachesResult.data ?? []) as CoachAccount[]);
     setRsvps((rsvpsResult.data ?? []) as RsvpRecord[]);
@@ -819,50 +816,25 @@ export default function Page() {
     await loadData(session);
   }
 
-  async function downloadInstall(path: string) {
-    const client = supabase;
-    if (!client) return;
-    const { data, error } = await client.storage.from(installBucket).createSignedUrl(path, 60);
-    if (error) {
-      setStatus(error.message);
-      return;
-    }
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
-  }
-
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const client = supabase;
-    if (!client || !currentCoach || !selectedChannel || !messageBody.trim()) return;
-    let attachmentPath: string | null = null;
-    if (messageUpload) {
-      const cleanName = messageUpload.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-      attachmentPath = `chat/${Date.now()}-${cleanName}`;
-      const upload = await client.storage.from(installBucket).upload(attachmentPath, messageUpload);
-      if (upload.error) {
-        setStatus(upload.error.message);
-        return;
-      }
+    const user = session?.user;
+    if (!client || !user || !selectedChannel || !messageBody.trim()) return;
+    if (!currentProfile) {
+      setStatus("Complete your profile before sending chat messages.");
+      return;
     }
     const { error } = await client.from("chat_messages").insert({
       channel_id: selectedChannel.id,
-      coach_id: currentCoach.id,
-      body: messageBody.trim(),
-      attachment_path: attachmentPath
+      user_id: user.id,
+      coach_name: currentProfile.full_name,
+      message: messageBody.trim()
     });
     setStatus(error ? error.message : "Message saved.");
     if (!error) {
       setMessageBody("");
-      setMessageUpload(null);
     }
-    await loadData(session);
-  }
-
-  async function togglePinned(message: ChatMessageRecord) {
-    const client = supabase;
-    if (!client || !isAdmin) return;
-    const { error } = await client.from("chat_messages").update({ pinned: !message.pinned }).eq("id", message.id);
-    setStatus(error ? error.message : "Message moderation saved.");
     await loadData(session);
   }
 
@@ -1110,26 +1082,20 @@ export default function Page() {
                   <h2 className="text-xl font-black">{channelName}</h2>
                   <span className="rounded-full bg-orange/15 px-3 py-1 text-xs font-black text-orange">Realtime</span>
                 </div>
-                <div className="mt-4 space-y-3">
-                  {currentMessages.map((message) => (
+                <div className="mt-4 max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+                  {currentMessages.length ? currentMessages.map((message) => (
                     <div key={message.id} className="rounded-lg bg-graphite/70 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-black">{message.coaches?.full_name ?? "Coach"}</span>
+                        <span className="font-black">{message.coach_name}</span>
                         <span className="text-xs font-bold text-white/40">{formatDateTime(message.created_at)}</span>
                       </div>
-                      <p className="mt-2 text-sm text-white/75">{message.body}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {message.pinned && <span className="rounded bg-orange/15 px-2 py-1 text-xs font-black text-orange">Pinned</span>}
-                        {message.attachment_path && <button onClick={() => downloadInstall(message.attachment_path ?? "")} className="rounded bg-white/10 px-2 py-1 text-xs font-black">Attachment</button>}
-                        {isAdmin && <button onClick={() => togglePinned(message)} className="rounded border border-line px-2 py-1 text-xs font-black">{message.pinned ? "Unpin" : "Pin"}</button>}
-                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-white/75">{message.message}</p>
                     </div>
-                  ))}
+                  )) : <p className="rounded-lg bg-graphite/70 p-4 text-sm text-white/60">No messages yet. Start the conversation for this channel.</p>}
                 </div>
-                <form onSubmit={sendMessage} className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <form onSubmit={sendMessage} className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
                   <input value={messageBody} onChange={(event) => setMessageBody(event.target.value)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder={`Message ${channelName}`} />
-                  <input onChange={(event) => setMessageUpload(event.target.files?.[0] ?? null)} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-3 py-2 text-sm" type="file" />
-                  <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Send</button>
+                  <button disabled={!session || !currentProfile || !messageBody.trim()} className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink disabled:cursor-not-allowed disabled:opacity-40">Send</button>
                 </form>
               </section>
             </div>

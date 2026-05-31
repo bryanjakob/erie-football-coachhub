@@ -15,12 +15,9 @@ export type RSVPStatus = "Yes" | "No";
 export type EventType = "Workout" | "Practice" | "Staff Meeting" | "Camp" | "Game" | "Clinic";
 
 export type StaffChannel =
-  | "Full Staff"
-  | "Defensive Staff"
-  | "Offensive Staff"
-  | "DBs"
-  | "LBs"
-  | "DL"
+  | "General Staff"
+  | "Offense"
+  | "Defense"
   | "Special Teams";
 
 export type CoachAccount = {
@@ -78,12 +75,10 @@ export type ChatChannelRecord = {
 export type ChatMessageRecord = {
   id: string;
   channel_id: string;
-  coach_id: string | null;
-  body: string;
-  attachment_path: string | null;
-  pinned: boolean;
+  user_id: string;
+  coach_name: string;
+  message: string;
   created_at: string;
-  coaches?: Pick<CoachAccount, "full_name"> | null;
 };
 
 export type AnnouncementRecord = {

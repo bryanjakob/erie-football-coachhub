@@ -99,12 +99,35 @@ create table if not exists chat_channels (
 create table if not exists chat_messages (
   id uuid primary key default gen_random_uuid(),
   channel_id uuid references chat_channels(id) on delete cascade,
-  coach_id uuid references coaches(id),
-  body text not null,
-  attachment_path text,
-  pinned boolean not null default false,
+  user_id uuid references auth.users(id) on delete cascade,
+  coach_name text not null,
+  message text not null,
   created_at timestamptz not null default now()
 );
+
+alter table chat_messages add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table chat_messages add column if not exists coach_name text;
+alter table chat_messages add column if not exists message text;
+
+do $$
+begin
+  alter table chat_messages alter column body drop not null;
+exception
+  when undefined_column then null;
+end $$;
+
+do $$
+begin
+  update chat_messages
+  set message = coalesce(message, body)
+  where message is null;
+exception
+  when undefined_column then null;
+end $$;
+
+update chat_messages
+set coach_name = coalesce(coach_name, 'Coach')
+where coach_name is null;
 
 create table if not exists announcements (
   id uuid primary key default gen_random_uuid(),
@@ -115,12 +138,9 @@ create table if not exists announcements (
 
 insert into chat_channels (name)
 values
-  ('Full Staff'),
-  ('Defensive Staff'),
-  ('Offensive Staff'),
-  ('DBs'),
-  ('LBs'),
-  ('DL'),
+  ('General Staff'),
+  ('Offense'),
+  ('Defense'),
   ('Special Teams')
 on conflict (name) do nothing;
 
@@ -315,13 +335,13 @@ using (public.is_staff_member());
 drop policy if exists "staff can send chat messages" on chat_messages;
 create policy "staff can send chat messages" on chat_messages
 for insert to authenticated
-with check (coach_id in (select id from coaches where auth_user_id = auth.uid()));
+with check (user_id = auth.uid() and public.is_staff_member());
 
 drop policy if exists "admins can moderate chat messages" on chat_messages;
 create policy "admins can moderate chat messages" on chat_messages
 for update to authenticated
-using (public.is_staff_admin())
-with check (public.is_staff_admin());
+using (user_id = auth.uid() or public.is_staff_admin())
+with check (user_id = auth.uid() or public.is_staff_admin());
 
 drop policy if exists "staff can read announcements" on announcements;
 create policy "staff can read announcements" on announcements
