@@ -467,11 +467,20 @@ export default function Page() {
   const isConfigured = Boolean(supabase);
   const isAdmin = currentCoach?.role === "Admin" && currentCoach.active;
   const profilesMissingFromCoaches = useMemo(() => {
+    if (coachDebugResult) {
+      const coachEmails = new Set(coachDebugResult.coachEmails.map((coach) => normalizeEmail(coach.email)).filter(Boolean));
+      return coachDebugResult.profileEmails.filter((profile) => {
+        const profileEmail = normalizeEmail(profile.email);
+        return profileEmail && !coachEmails.has(profileEmail);
+      });
+    }
+
+    const coachEmails = new Set(coaches.map((coach) => normalizeEmail(coach.email)).filter(Boolean));
     return profiles.filter((profile) => {
       const profileEmail = normalizeEmail(profile.email);
-      return !coaches.some((coach) => coach.auth_user_id === profile.id || (profileEmail && normalizeEmail(coach.email) === profileEmail));
+      return profileEmail && !coachEmails.has(profileEmail);
     });
-  }, [coaches, profiles]);
+  }, [coachDebugResult, coaches, profiles]);
 
   const selectedChannel = useMemo(
     () => channels.find((channel) => channel.name === channelName) ?? channels[0],
@@ -1795,17 +1804,20 @@ export default function Page() {
                   {coachSyncMessage && <p className="mt-3 rounded-lg bg-black/25 p-3 text-sm font-bold text-white/75">{coachSyncMessage}</p>}
                   <div className="mt-3 grid gap-2 text-xs font-bold text-white/65 sm:grid-cols-3">
                     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
-                      <div className="text-lg font-black text-white">{coachDebugResult?.authUsersCount ?? "-"}</div>
-                      <div className="uppercase tracking-wide text-white/40">Auth users</div>
-                    </div>
-                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
                       <div className="text-lg font-black text-white">{coachDebugResult?.profilesCount ?? profiles.length}</div>
-                      <div className="uppercase tracking-wide text-white/40">Profiles</div>
+                      <div className="uppercase tracking-wide text-white/40">Profiles Count</div>
                     </div>
                     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
                       <div className="text-lg font-black text-white">{coachDebugResult?.coachesCount ?? coaches.length}</div>
-                      <div className="uppercase tracking-wide text-white/40">Coaches</div>
+                      <div className="uppercase tracking-wide text-white/40">Coaches Count</div>
                     </div>
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <div className="text-lg font-black text-white">{profilesMissingFromCoaches.length}</div>
+                      <div className="uppercase tracking-wide text-white/40">Missing Profiles Count</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs font-bold text-white/55">
+                    Auth Users Count: {coachDebugResult?.authUsersCount ?? "-"}
                   </div>
                   <button
                     type="button"
