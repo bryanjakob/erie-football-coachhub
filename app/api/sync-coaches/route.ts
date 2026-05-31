@@ -156,19 +156,47 @@ export async function POST(request: Request) {
     }
 
     const wasExistingBeforeSync = existingCoachKeys.has(email) || existingCoachKeys.has(profile.id);
-    const { data: syncedCoach, error } = await adminClient
-      .from("coaches")
-      .upsert(
-        {
-          auth_user_id: profile.id,
+    if (wasExistingBeforeSync) {
+      const existingCoach = coaches.find((coach) => normalizeEmail(coach.email) === email || coach.auth_user_id === profile.id);
+      const { data: syncedCoach, error } = await adminClient
+        .from("coaches")
+        .update({
+          auth_user_id: existingCoach?.auth_user_id ?? profile.id,
           email,
           full_name: fullName,
           position_group: positionGroup,
-          role: "Coach",
           active: true
-        },
-        { onConflict: "email" }
-      )
+        })
+        .eq("email", email)
+        .select("*")
+        .single();
+
+      if (error) {
+        const reason = `ERROR: ${error.message}`;
+        errors.push(`${email}: ${error.message}`);
+        coachFailures.push({ email, reason });
+        continue;
+      }
+
+      syncedCoachesCount += 1;
+      updatedCoachRecordsCount += 1;
+      coaches = [
+        ...coaches.filter((coach) => coach.id !== (syncedCoach as CoachAccount).id && normalizeEmail(coach.email) !== email),
+        syncedCoach as CoachAccount
+      ];
+      continue;
+    }
+
+    const { data: syncedCoach, error } = await adminClient
+      .from("coaches")
+      .insert({
+        auth_user_id: profile.id,
+        email,
+        full_name: fullName,
+        position_group: positionGroup,
+        role: "Coach",
+        active: true
+      })
       .select("*")
       .single();
 
@@ -180,13 +208,9 @@ export async function POST(request: Request) {
     }
 
     syncedCoachesCount += 1;
-    if (wasExistingBeforeSync) {
-      updatedCoachRecordsCount += 1;
-    } else {
-      createdCoachRecordsCount += 1;
-      existingCoachKeys.add(email);
-      existingCoachKeys.add(profile.id);
-    }
+    createdCoachRecordsCount += 1;
+    existingCoachKeys.add(email);
+    existingCoachKeys.add(profile.id);
     coaches = [
       ...coaches.filter((coach) => coach.id !== (syncedCoach as CoachAccount).id && normalizeEmail(coach.email) !== email),
       syncedCoach as CoachAccount
