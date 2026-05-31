@@ -59,42 +59,42 @@ function denverTimestamp(date: string, time: string) {
 const summerWeekOneSchedule: ScheduleImportEvent[] = [
   {
     title: "OL/DL Camp",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 9:30-11:00 AM\nLocation: Thunderridge\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 9:30-11:00 AM\nLocation: Thunderridge\nAttendance required",
     date: denverTimestamp("2026-05-31", "09:30")
   },
   {
     title: "Summer Workout #1",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-01", "07:00")
   },
   {
     title: "Summer Workout #2",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-02", "07:00")
   },
   {
     title: "Team Pass #1",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nAttendance required",
     date: denverTimestamp("2026-06-02", "08:30")
   },
   {
     title: "Player Led Practice",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-03", "07:00")
   },
   {
     title: "Summer Workout #4",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-04", "07:00")
   },
   {
     title: "Team Pass #2",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nAttendance required",
     date: denverTimestamp("2026-06-04", "08:30")
   },
   {
     title: "Summer Workout #5",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-05", "07:00")
   }
 ];
@@ -112,6 +112,11 @@ const initialEventForm: EventForm = {
 const statusStyles: Record<RSVPStatus, string> = {
   Yes: "bg-orange/15 text-orange ring-orange/30",
   No: "bg-red-500/15 text-red-200 ring-red-400/30"
+};
+
+const attendanceLabels: Record<RSVPStatus, string> = {
+  Yes: "Attending",
+  No: "Not Attending"
 };
 
 function Icon({ name }: { name: Section | "Bell" | "Lock" | "Upload" | "Download" | "Search" | "Plus" }) {
@@ -147,11 +152,11 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: s
 }
 
 function StatusPill({ status }: { status: RSVPStatus }) {
-  return <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusStyles[status]}`}>{status}</span>;
+  return <span className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${statusStyles[status]}`}>{attendanceLabels[status]}</span>;
 }
 
 function RsvpSelection({ response }: { response: RSVPStatus | null }) {
-  return response ? <StatusPill status={response} /> : <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/15">No RSVP</span>;
+  return response ? <StatusPill status={response} /> : <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/60 ring-1 ring-white/15">Awaiting Attendance Response</span>;
 }
 
 function ErieLogo({ className = "" }: { className?: string }) {
@@ -222,6 +227,14 @@ function eventColorClass(event: StaffEventRecord) {
 function eventLocation(event: StaffEventRecord) {
   const locationLine = event.description?.split("\n").find((line) => line.toLowerCase().startsWith("location:"));
   return locationLine?.replace(/^location:\s*/i, "").trim() || "Not listed";
+}
+
+function attendanceDescription(description?: string | null) {
+  return description
+    ?.replace(/RSVP required/gi, "Attendance required")
+    .replace(/Attendance required:\s*Yes/gi, "Attendance required")
+    .replace(/RSVPs/gi, "Attendance responses")
+    .replace(/RSVP/gi, "Attendance");
 }
 
 function coachRoleLabel(coach: CoachAccount | null) {
@@ -424,7 +437,7 @@ export default function Page() {
     if (firstError) {
       setStatus(firstError.message);
     } else if (!profile) {
-      setStatus("Complete your profile so RSVPs can attach to your coach name.");
+      setStatus("Complete your profile so attendance responses can attach to your coach name.");
     } else if (!coachAccount) {
       setStatus("Signed in as a coach. Admin features require staff role assignment.");
     } else {
@@ -764,12 +777,12 @@ export default function Page() {
       return;
     }
     if (!user) {
-      setRsvpError("Sign in before saving an RSVP.");
+      setRsvpError("Sign in before saving attendance.");
       return;
     }
     if (!currentProfile) {
-      setRsvpError("Complete your profile before saving an RSVP.");
-      setStatus("Complete your profile before saving an RSVP.");
+      setRsvpError("Complete your profile before saving attendance.");
+      setStatus("Complete your profile before saving attendance.");
       return;
     }
 
@@ -788,14 +801,14 @@ export default function Page() {
       .single();
 
     if (error) {
-      const message = `RSVP save failed: ${error.message}`;
+      const message = `Attendance save failed: ${error.message}`;
       setRsvpError(message);
       setStatus(message);
       return;
     }
 
     setRsvpError("");
-    setStatus("RSVP saved.");
+    setStatus("Attendance saved.");
     if (data) {
       const savedRsvp = data as RsvpRecord;
       setRsvps((existingRsvps) => [
@@ -934,7 +947,7 @@ export default function Page() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   <label className="text-xs font-bold uppercase tracking-wide text-orange">Complete Profile</label>
-                  <p className="mt-1 text-sm text-white/60">Enter your full name once. Your RSVPs will use this coach name automatically.</p>
+                  <p className="mt-1 text-sm text-white/60">Enter your full name once. Your attendance responses will use this coach name automatically.</p>
                   <input value={profileName} onChange={(event) => setProfileName(event.target.value)} className="mt-3 min-h-12 w-full rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Coach full name" required />
                 </div>
                 <button className="min-h-12 rounded-lg bg-orange px-5 font-black text-ink">Save Profile</button>
@@ -965,7 +978,7 @@ export default function Page() {
                     <>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-orange">Next Required RSVP</p>
+                          <p className="text-xs font-bold uppercase tracking-wide text-orange">Next Required Attendance</p>
                           <h2 className="mt-2 text-3xl font-black">{nextEvent.title}</h2>
                           <p className="mt-1 text-base font-bold text-white/65">{formatDateTime(nextEvent.date)}</p>
                         </div>
@@ -973,7 +986,7 @@ export default function Page() {
                       </div>
                       <div className="mt-5 grid grid-cols-2 gap-2">
                         {(["Yes", "No"] as RSVPStatus[]).map((response) => (
-                          <button key={response} onClick={() => respondToEvent(nextEvent.id, response)} className={`min-h-14 rounded-lg text-base font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                          <button key={response} onClick={() => respondToEvent(nextEvent.id, response)} className={`min-h-14 rounded-lg text-base font-black ring-1 ${statusStyles[response]}`}>{attendanceLabels[response]}</button>
                         ))}
                       </div>
                     </>
@@ -994,8 +1007,8 @@ export default function Page() {
                 <section className="rounded-lg border border-line bg-charcoal/90 p-4">
                   <h2 className="text-lg font-black">Attendance Summary</h2>
                   <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Metric label="My RSVPs Completed" value={`${myCompletedRsvps}`} tone="text-orange" />
-                    <Metric label="Pending RSVPs" value={`${myPendingRsvps}`} tone={myPendingRsvps ? "text-red-200" : "text-orange"} />
+                    <Metric label="My Attendance Completed" value={`${myCompletedRsvps}`} tone="text-orange" />
+                    <Metric label="Awaiting Attendance Response" value={`${myPendingRsvps}`} tone={myPendingRsvps ? "text-red-200" : "text-orange"} />
                     <Metric label="Total Events" value={`${events.length}`} />
                   </div>
                 </section>
@@ -1033,13 +1046,13 @@ export default function Page() {
                   <input value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} className="min-h-12 rounded-lg border border-line bg-graphite/80 px-4 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Location" />
                   <textarea value={eventForm.notes} onChange={(event) => setEventForm({ ...eventForm, notes: event.target.value })} className="min-h-24 rounded-lg border border-line bg-graphite/80 px-4 py-3 text-sm outline-none ring-orange/40 placeholder:text-white/40 focus:ring-2" placeholder="Notes" />
                   <label className="flex min-h-12 items-center justify-between rounded-lg border border-line bg-graphite/80 px-4 text-sm font-bold">
-                    Require RSVP responses
+                    Require attendance responses
                     <input checked={eventForm.rsvpRequired} onChange={(event) => setEventForm({ ...eventForm, rsvpRequired: event.target.checked })} type="checkbox" className="h-5 w-5 accent-orange" />
                   </label>
                 </div>
               </form>
               <section className="rounded-lg border border-line bg-charcoal/90 p-4">
-                <h2 className="text-xl font-black">Live RSVP Board</h2>
+                <h2 className="text-xl font-black">Live Attendance Board</h2>
                 <div className="mt-4 space-y-2">
                   {eventFetchError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{eventFetchError}</p>}
                   {rsvpError && <p className="rounded-lg border border-red-400/30 bg-red-500/15 p-4 text-sm font-bold text-red-100">{rsvpError}</p>}
@@ -1057,7 +1070,7 @@ export default function Page() {
                         </div>
                         <div className="grid grid-cols-2 gap-2 sm:w-40">
                           {(["Yes", "No"] as RSVPStatus[]).map((response) => (
-                            <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-10 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{response}</button>
+                            <button key={response} onClick={() => respondToEvent(event.id, response)} className={`min-h-10 rounded-lg text-sm font-black ring-1 ${statusStyles[response]}`}>{attendanceLabels[response]}</button>
                           ))}
                         </div>
                       </div>
@@ -1182,16 +1195,16 @@ export default function Page() {
                       <h3 className="mt-3 text-lg font-black">{selectedEvent.title}</h3>
                       <p className="mt-1 text-sm text-white/60">{formatDateTime(selectedEvent.date)}</p>
                       <p className="mt-2 text-sm font-bold text-white/70">Location: {eventLocation(selectedEvent)}</p>
-                      {selectedEvent.description && <p className="mt-3 whitespace-pre-line text-sm text-white/70">{selectedEvent.description}</p>}
+                      {selectedEvent.description && <p className="mt-3 whitespace-pre-line text-sm text-white/70">{attendanceDescription(selectedEvent.description)}</p>}
                       <div className="mt-3 flex items-center justify-between rounded-lg bg-graphite/70 px-3 py-2 text-sm">
-                        <span className="font-bold text-white/70">Your RSVP</span>
+                        <span className="font-bold text-white/70">My Attendance</span>
                         <RsvpSelection response={myRsvp(selectedEvent.id)} />
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Metric label="Yes" value={`${eventRsvpSummary(selectedEvent.id).Yes}`} tone="text-orange" />
-                        <Metric label="No" value={`${eventRsvpSummary(selectedEvent.id).No}`} tone="text-red-200" />
+                        <Metric label="Attending" value={`${eventRsvpSummary(selectedEvent.id).Yes}`} tone="text-orange" />
+                        <Metric label="Not Attending" value={`${eventRsvpSummary(selectedEvent.id).No}`} tone="text-red-200" />
                       </div>
-                      <button type="button" onClick={() => setSection("Attendance")} className="mt-3 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink">Open RSVP Page</button>
+                      <button type="button" onClick={() => setSection("Attendance")} className="mt-3 min-h-11 w-full rounded-lg bg-orange px-4 font-black text-ink">Open Attendance Page</button>
                     </div>
                   ) : <p className="mt-3 text-sm text-white/60">Select a date or event to view details.</p>}
                 </div>
@@ -1209,7 +1222,7 @@ export default function Page() {
                 <span className="rounded-full bg-orange/15 px-3 py-1 text-xs font-black text-orange ring-1 ring-orange/30">Disabled</span>
               </div>
               <p className="mt-4 rounded-lg bg-graphite/70 p-4 text-sm text-white/70">
-                Installs, drill cards, scouts, and file uploads are temporarily turned off. Coach accounts, profiles, calendar events, attendance, RSVPs, and schedule visibility remain active.
+                Installs, drill cards, scouts, and file uploads are temporarily turned off. Coach accounts, profiles, calendar events, attendance responses, and schedule visibility remain active.
               </p>
             </section>
           )}
@@ -1295,7 +1308,7 @@ export default function Page() {
                           <p className="font-black">{event.title}</p>
                           <p className="shrink-0 text-xs font-bold text-white/50">{formatDateTime(event.date)}</p>
                         </div>
-                        <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/60">{event.description}</p>
+                        <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/60">{attendanceDescription(event.description)}</p>
                       </div>
                     ))}
                   </div>
@@ -1315,7 +1328,7 @@ export default function Page() {
                             <p className="shrink-0 text-xs font-bold text-white/60">{formatDateTime(event.date)}</p>
                           </div>
                           <p className="mt-1 text-[11px] font-bold text-white/45">id: {event.id}</p>
-                          {event.description && <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/65">{event.description}</p>}
+                          {event.description && <p className="mt-2 whitespace-pre-line text-xs leading-5 text-white/65">{attendanceDescription(event.description)}</p>}
                         </div>
                       ))}
                     </div>
@@ -1344,7 +1357,7 @@ export default function Page() {
           {navItems.map((item) => (
             <button key={item} onClick={() => setSection(item)} className={`grid min-h-14 place-items-center rounded-lg text-[11px] font-bold ${section === item ? "bg-orange text-ink" : "text-white/60"}`}>
               <Icon name={item} />
-              <span className="mt-1">{item === "Attendance" ? "RSVP" : item === "Installs" ? "Files" : item}</span>
+              <span className="mt-1">{item === "Installs" ? "Files" : item}</span>
             </button>
           ))}
         </div>

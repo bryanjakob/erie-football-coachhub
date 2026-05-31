@@ -21,42 +21,42 @@ function denverTimestamp(date: string, time: string) {
 const weekOneEvents: WeekOneEvent[] = [
   {
     title: "OL/DL Camp",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 9:30-11:00 AM\nLocation: Thunderridge\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 9:30-11:00 AM\nLocation: Thunderridge\nAttendance required",
     date: denverTimestamp("2026-05-31", "09:30")
   },
   {
     title: "Summer Workout #1",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-01", "07:00")
   },
   {
     title: "Summer Workout #2",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-02", "07:00")
   },
   {
     title: "Team Pass #1",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nAttendance required",
     date: denverTimestamp("2026-06-02", "08:30")
   },
   {
     title: "Player Led Practice",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-03", "07:00")
   },
   {
     title: "Summer Workout #4",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-04", "07:00")
   },
   {
     title: "Team Pass #2",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 8:30 AM\nAttendance required",
     date: denverTimestamp("2026-06-04", "08:30")
   },
   {
     title: "Summer Workout #5",
-    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nRSVP required: Yes",
+    description: "Imported from 2026 Summer Workout Outline - Week 1.\nTime: 7:00-8:15 AM\nAttendance required",
     date: denverTimestamp("2026-06-05", "07:00")
   }
 ];
