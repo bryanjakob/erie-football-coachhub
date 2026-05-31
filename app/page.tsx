@@ -330,6 +330,25 @@ function coachAccountUserId(coach: CoachAccount, profiles: CoachProfile[], activ
   return profiles.find((profile) => normalizeEmail(profile.email) === coachEmail)?.id ?? null;
 }
 
+function metadataString(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function profileFromAuthMetadata(activeSession: Session) {
+  const metadata = activeSession.user.user_metadata as Record<string, unknown>;
+  const firstName = metadataString(metadata, "first_name");
+  const lastName = metadataString(metadata, "last_name");
+  const fullName = metadataString(metadata, "full_name") || [firstName, lastName].filter(Boolean).join(" ");
+  const positionGroupValue = metadataString(metadata, "position_group");
+  const positionGroup = positionGroups.includes(positionGroupValue as PositionGroup) ? (positionGroupValue as PositionGroup) : "";
+
+  return {
+    fullName,
+    positionGroup
+  };
+}
+
 function eventRsvpRequired(event: StaffEventRecord) {
   return event.rsvp_required ?? true;
 }
@@ -545,8 +564,38 @@ export default function Page() {
       coachRows.find((coach) => coach.auth_user_id === activeSession.user.id) ??
       coachRows.find((coach) => normalizeEmail(coach.email) === userEmail) ??
       null;
-    const profile = (profileResult.data as CoachProfile | null) ?? null;
+    let profile = (profileResult.data as CoachProfile | null) ?? null;
     let resolvedCoachAccount = coachAccount;
+    if (!profile && activeSession.access_token) {
+      const metadataProfile = profileFromAuthMetadata(activeSession);
+      if (metadataProfile.fullName && metadataProfile.positionGroup) {
+        try {
+          const ensuredAccount = await ensureCoachAccount(metadataProfile.fullName, metadataProfile.positionGroup, activeSession.access_token);
+          if (ensuredAccount.profile) {
+            profile = ensuredAccount.profile;
+            setProfiles((existingProfiles) => [
+              ...existingProfiles.filter((existingProfile) => existingProfile.id !== ensuredAccount.profile?.id),
+              ensuredAccount.profile
+            ].filter(Boolean) as CoachProfile[]);
+          }
+          if (ensuredAccount.coach) {
+            resolvedCoachAccount = ensuredAccount.coach;
+            setCoaches((existingCoaches) => {
+              const nextCoaches = [
+                ...existingCoaches.filter((coach) => coach.id !== ensuredAccount.coach?.id),
+                ensuredAccount.coach
+              ];
+              return (nextCoaches.filter(Boolean) as CoachAccount[]).sort((a, b) => a.created_at.localeCompare(b.created_at));
+            });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Profile auto-create failed.";
+          console.warn("CoachHub auth metadata profile sync failed", error);
+          setStatus(`Profile auto-create failed: ${message}`);
+        }
+      }
+    }
+
     if (profile?.position_group && activeSession.access_token && (!resolvedCoachAccount || !resolvedCoachAccount.auth_user_id)) {
       try {
         const ensuredAccount = await ensureCoachAccount(profile.full_name, profile.position_group, activeSession.access_token);
@@ -1158,6 +1207,10 @@ export default function Page() {
     }
   }
 
+  async function listAllAuthUsers() {
+    await refreshCoachDirectoryDebug();
+  }
+
   async function updateCoachActive(coach: CoachAccount, active: boolean) {
     const client = supabase;
     if (!client || !isAdmin) return;
@@ -1759,7 +1812,27 @@ export default function Page() {
                   >
                     {coachDebugLoading ? "Reading Debug Data..." : "Refresh Directory Debug"}
                   </button>
+                  <button
+                    type="button"
+                    onClick={listAllAuthUsers}
+                    disabled={!isAdmin || coachDebugLoading}
+                    className="mt-2 min-h-10 w-full rounded-lg bg-graphite px-4 text-sm font-black text-orange ring-1 ring-orange/25 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    List All Auth Users
+                  </button>
                   {coachDebugMessage && <p className="mt-3 rounded-lg bg-black/25 p-3 text-sm font-bold text-white/65">{coachDebugMessage}</p>}
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
+                    <h4 className="text-xs font-black uppercase tracking-wide text-white/45">Emails Found In Auth Users</h4>
+                    {coachDebugResult?.authUserEmails.length ? (
+                      <div className="mt-2 space-y-1">
+                        {coachDebugResult.authUserEmails.map((email) => (
+                          <div key={email} className="text-xs font-bold text-white/70">{email}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs font-bold text-white/50">Click List All Auth Users to read auth.users with the server key.</p>
+                    )}
+                  </div>
                   <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3">
                     <h4 className="text-xs font-black uppercase tracking-wide text-white/45">Emails Found In Profiles</h4>
                     {coachDebugResult?.profileEmails.length ? (
