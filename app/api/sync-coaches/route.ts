@@ -105,6 +105,7 @@ export async function POST(request: Request) {
   );
   let createdProfilesCount = 0;
   let createdCoachRecordsCount = 0;
+  let updatedCoachRecordsCount = 0;
   let syncedCoachesCount = 0;
 
   for (const authUser of authUsers) {
@@ -136,6 +137,7 @@ export async function POST(request: Request) {
     profiles = [...profiles, profile as CoachProfile];
   }
 
+  const coachUpsertRows = [];
   for (const profile of profiles) {
     const email = normalizeEmail(profile.email) || authEmailById.get(profile.id) || "";
     const fullName = profile.full_name?.trim();
@@ -146,57 +148,31 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const existingCoach =
-      coaches.find((coach) => coach.auth_user_id === profile.id) ??
-      coaches.find((coach) => normalizeEmail(coach.email) === email) ??
-      null;
+    coachUpsertRows.push({
+      auth_user_id: profile.id,
+      email,
+      full_name: fullName,
+      position_group: positionGroup,
+      role: "Coach",
+      active: true
+    });
+  }
 
-    if (existingCoach) {
-      const { data: updatedCoach, error } = await adminClient
-        .from("coaches")
-        .update({
-          auth_user_id: existingCoach.auth_user_id ?? profile.id,
-          email,
-          full_name: fullName,
-          position_group: positionGroup,
-          active: true
-        })
-        .eq("id", existingCoach.id)
-        .select("*")
-        .single();
-
-      if (error) {
-        errors.push(`${fullName}: ${error.message}`);
-        continue;
-      }
-
-      syncedCoachesCount += 1;
-      coaches = coaches.map((coach) => coach.id === existingCoach.id ? (updatedCoach as CoachAccount) : coach);
-      continue;
-    }
-
-    const wasExistingBeforeSync = existingCoachKeys.has(email) || existingCoachKeys.has(profile.id);
-    const { data: insertedCoach, error } = await adminClient
+  if (coachUpsertRows.length > 0) {
+    const { data: syncedCoaches, error } = await adminClient
       .from("coaches")
-      .insert({
-        auth_user_id: profile.id,
-        email,
-        full_name: fullName,
-        position_group: positionGroup,
-        role: "Coach",
-        active: true
-      })
-      .select("*")
-      .single();
+      .upsert(coachUpsertRows, { onConflict: "email" })
+      .select("*");
 
     if (error) {
-      errors.push(`${fullName}: ${error.message}`);
-      continue;
+      errors.push(`Coach upsert failed: ${error.message}`);
+    } else {
+      const syncedRows = (syncedCoaches ?? []) as CoachAccount[];
+      syncedCoachesCount = syncedRows.length;
+      createdCoachRecordsCount = coachUpsertRows.filter((row) => !existingCoachKeys.has(row.email) && !existingCoachKeys.has(row.auth_user_id)).length;
+      updatedCoachRecordsCount = syncedRows.length - createdCoachRecordsCount;
+      coaches = syncedRows;
     }
-
-    syncedCoachesCount += 1;
-    if (!wasExistingBeforeSync) createdCoachRecordsCount += 1;
-    coaches = [...coaches, insertedCoach as CoachAccount];
   }
 
   const refreshedCoachesResult = await adminClient
@@ -226,6 +202,7 @@ export async function POST(request: Request) {
     syncedCoachesCount,
     createdProfilesCount,
     createdCoachRecordsCount,
+    updatedCoachRecordsCount,
     existingCoachesCount,
     profilesCount: profiles.length,
     coachesCount: coaches.length,

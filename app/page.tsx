@@ -50,6 +50,7 @@ type SyncCoachesResult = {
   syncedCoachesCount: number;
   createdProfilesCount: number;
   createdCoachRecordsCount?: number;
+  updatedCoachRecordsCount?: number;
   existingCoachesCount: number;
   profilesCount: number;
   coachesCount: number;
@@ -1169,7 +1170,7 @@ export default function Page() {
 
       const syncResult = result as SyncCoachesResult;
       setCoachSyncResult(syncResult);
-      setCoachSyncMessage(`Created ${syncResult.createdCoachRecordsCount ?? 0} coach record${(syncResult.createdCoachRecordsCount ?? 0) === 1 ? "" : "s"}. Synced ${syncResult.syncedCoachesCount} total.`);
+      setCoachSyncMessage(`Created ${syncResult.createdCoachRecordsCount ?? 0} coach records. Updated ${syncResult.updatedCoachRecordsCount ?? 0} coach records.`);
       setCoachDebugResult({
         authUsersCount: syncResult.authUsersCount,
         profilesCount: syncResult.profilesCount,
@@ -1896,6 +1897,7 @@ export default function Page() {
                       <div className="font-black text-white">Last Sync Result</div>
                       <div>Synced coaches: {coachSyncResult.syncedCoachesCount}</div>
                       <div>Coach records created: {coachSyncResult.createdCoachRecordsCount ?? 0}</div>
+                      <div>Coach records updated: {coachSyncResult.updatedCoachRecordsCount ?? 0}</div>
                       <div>Profiles created from Auth users: {coachSyncResult.createdProfilesCount ?? 0}</div>
                       <div>Existing coaches before sync: {coachSyncResult.existingCoachesCount}</div>
                       <div>Profiles read: {coachSyncResult.profilesCount}</div>
